@@ -1,0 +1,6 @@
+/* App-level styles kept intentionally minimal — index.css owns the design system. */
+
+.App {
+    min-height: 100vh;
+    background: #0e1117;
+}
