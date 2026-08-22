@@ -193,11 +193,11 @@ export function getHealth(signal) {
 
 /**
  * GET /v1/topics — ranked feed.
- * @param {{limit?:number, offset?:number, min_confidence?:number, sector?:string, apiKey:string, signal?:AbortSignal}} opts
+ * @param {{limit?:number, offset?:number, min_confidence?:number, sector?:string, q?:string, status?:string, sentiment?:string, apiKey:string, signal?:AbortSignal}} opts
  */
-export function getTopics({ limit, offset, min_confidence, sector, apiKey, signal }) {
+export function getTopics({ limit, offset, min_confidence, sector, q, status, sentiment, apiKey, signal }) {
   return request("/v1/topics", {
-    params: { limit, offset, min_confidence, sector },
+    params: { limit, offset, min_confidence, sector, q, status, sentiment },
     apiKey,
     signal,
   });
@@ -217,11 +217,23 @@ export function getTopic({ topicId, history_hours, members, apiKey, signal }) {
 
 /**
  * GET /v1/map — the semantic map.
- * @param {{window?:'24h'|'72h'|'7d'|'30d', asof?:string, limit?:number, apiKey:string, signal?:AbortSignal}} opts
+ * @param {{window?:'24h'|'72h'|'7d'|'30d', asof?:string, limit?:number, mode?:'cumulative'|'moment', percentile?:number|'all', topic_id?:number, apiKey:string, signal?:AbortSignal}} opts
  */
-export function getMap({ window: win, asof, limit, apiKey, signal }) {
+export function getMap({ window: win, asof, limit, mode, percentile, topic_id, apiKey, signal }) {
   return request("/v1/map", {
-    params: { window: win, asof, limit },
+    params: { window: win, asof, limit, mode, percentile, topic_id },
+    apiKey,
+    signal,
+  });
+}
+
+/**
+ * GET /v1/topics/{id}/neighbours — related topics (nearest neighbours).
+ * @param {{topicId:number, limit?:number, apiKey:string, signal?:AbortSignal}} opts
+ */
+export function getNeighbours({ topicId, limit = 6, apiKey, signal }) {
+  return request(`/v1/topics/${topicId}/neighbours`, {
+    params: { limit },
     apiKey,
     signal,
   });

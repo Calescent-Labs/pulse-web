@@ -14,6 +14,10 @@ const FEATURE_COPY = {
     "See what the map looked like at any hour in the last 30 days. Watch a story ignite in one region and spread — same geography, different weather.",
   "sector filter":
     "Narrow the ranked feed to a single sector. Answer 'what's rising in gaming right now' without scanning the whole feed.",
+  "status filter":
+    "Filter by lifecycle stage — emerging, accelerating, peaking, declining, resurfaced, or dormant. Every topic is 'emerging' today; the rest of the classifier ships later.",
+  "sentiment filter":
+    "Filter by audience sentiment, including 'divided' — where the crowd is split (mean ≈ 0 with high polarisation) rather than indifferent.",
   "extended history":
     "Follow a topic's arc for up to 30 days instead of 24 hours. See where it came from, not just where it is.",
   "extended window":

@@ -59,12 +59,17 @@ src/
 - ✅ Data-access module with 402/401/429/503 typed error branches
 - ✅ Free/Pro tier context with dev-only toggle (env-gated)
 - ✅ Health/staleness banner (>2h old → "stale")
-- ✅ Map page with fixed bounds, deck.gl scatter + heat, URL sync (`window`, `asof`, `mode`, `color`, `heat`), Pro scrubber with play/pause/step
-- ✅ Trending page with sector filter (pro-gated, shows LockedFeature), min-confidence slider, mobile layout
-- ✅ Topic detail with velocity/acceleration + percentile + sentiment charts, series-break marker, member list keeping removed items visible
+- ✅ Map page with fixed bounds, deck.gl scatter + heat, URL sync (`window`, `asof`, `mode`, `percentile`, `topic_id`, `color`, `heat`), Pro scrubber with play/pause/step
+- ✅ Trending page with search (`q`), status/sentiment filters (Pro-gated), sector filter (Pro-gated), min-confidence slider, pagination (Prev/Next), mobile layout
+- ✅ Topic detail with velocity/acceleration + percentile + sentiment charts, series-break marker, member list keeping removed items visible, **Related topics** grid (nearest neighbours with closeness %)
+- ✅ Map **Moment vs Cumulative** mode toggle with percentile selector (10/25/50/all); API `note` rendered on empty moment windows
+- ✅ Map **Focus on topic** — clicking a point → "Focus on map" pins `?topic_id=` in the URL, banner with clear button
 - ✅ Persistent disclaimer footer sourced from `meta.disclaimer`
 - ✅ Static Open Graph card (`public/og-card.png`, 1200×630) + og/twitter meta in `public/index.html`
-- ✅ "Copy share link" button on the Map — copies current URL with `window`/`asof`/`color`/`heat` state so any deep link is shareable
+- ✅ "Copy share link" button on the Map — copies current URL with full state so any deep link is shareable
+- ✅ Session-scoped bounds (invalidated when window/mode changes, matching v1.1 contract note about UMAP re-fitting)
+- ✅ Empty-state copy distinguishes "no matches" vs "sentiment data is sparse — most topics don't have comments yet"
+- ✅ Status lifecycle caveat surfaced in-context ("lifecycle stages roll out later") when Pro user filters by status
 
 ## Explicit non-goals
 

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getHealth, getMap, getSectors, getTopic, getTopics } from "./pulseClient";
+import { getHealth, getMap, getNeighbours, getSectors, getTopic, getTopics } from "./pulseClient";
 import { useTier } from "./tierContext";
 
 // Data updates hourly server-side and is cached 5 min; we set staleTime to
@@ -15,13 +15,15 @@ export function useHealth() {
   });
 }
 
-export function useTopics({ limit = 30, offset = 0, min_confidence, sector } = {}) {
+export function useTopics({ limit = 30, offset = 0, min_confidence, sector, q, status, sentiment } = {}) {
   const { apiKey, tier } = useTier();
   return useQuery({
-    queryKey: ["topics", { limit, offset, min_confidence, sector, tier }],
-    queryFn: ({ signal }) => getTopics({ limit, offset, min_confidence, sector, apiKey, signal }),
+    queryKey: ["topics", { limit, offset, min_confidence, sector, q, status, sentiment, tier }],
+    queryFn: ({ signal }) =>
+      getTopics({ limit, offset, min_confidence, sector, q, status, sentiment, apiKey, signal }),
     enabled: Boolean(apiKey),
     staleTime: 60_000,
+    placeholderData: (prev) => prev,
     retry: (failureCount, err) => {
       if (err && (err.code === 401 || err.code === 402)) return false;
       return failureCount < 1;
@@ -43,11 +45,26 @@ export function useTopic({ topicId, history_hours = 24, members = 20 }) {
   });
 }
 
-export function useMap({ window, asof, limit }) {
+export function useNeighbours({ topicId, limit = 6 }) {
+  const { apiKey } = useTier();
+  return useQuery({
+    queryKey: ["neighbours", topicId, limit],
+    queryFn: ({ signal }) => getNeighbours({ topicId, limit, apiKey, signal }),
+    enabled: Boolean(apiKey) && Number.isFinite(topicId),
+    staleTime: 5 * 60_000,
+    retry: (failureCount, err) => {
+      if (err && (err.code === 401 || err.code === 402 || err.code === 404)) return false;
+      return failureCount < 1;
+    },
+  });
+}
+
+export function useMap({ window, asof, limit, mode, percentile, topic_id }) {
   const { apiKey, tier } = useTier();
   return useQuery({
-    queryKey: ["map", { window, asof, limit, tier }],
-    queryFn: ({ signal }) => getMap({ window, asof, limit, apiKey, signal }),
+    queryKey: ["map", { window, asof, limit, mode, percentile, topic_id, tier }],
+    queryFn: ({ signal }) =>
+      getMap({ window, asof, limit, mode, percentile, topic_id, apiKey, signal }),
     enabled: Boolean(apiKey),
     staleTime: 60_000,
     retry: (failureCount, err) => {
@@ -55,7 +72,7 @@ export function useMap({ window, asof, limit }) {
       return failureCount < 1;
     },
     // The scrubber changes asof frequently — keep previous data during
-    // transitions so the map doesn't flash empty. React Query v5:
+    // transitions so the map doesn't flash empty.
     placeholderData: (prev) => prev,
   });
 }

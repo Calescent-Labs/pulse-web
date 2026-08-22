@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { HeatBadge } from "../components/HeatBadge";
 import { SentimentIndicator } from "../components/SentimentIndicator";
-import { Sparkline } from "../components/Sparkline";
 import { StatusChip } from "../components/StatusChip";
 import { LockedFeature } from "../components/LockedFeature";
 import { ErrorState } from "../components/ErrorState";
@@ -13,48 +12,62 @@ import { useSectors, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
 import { formatCompact, safeName } from "../lib/format";
 
-function SectorFilter({ value, onChange }) {
-  const { tier } = useTier();
-  const { data, error } = useSectors();
+const PAGE_SIZE = 30;
+
+const STATUSES = [
+  { v: "emerging", label: "Emerging" },
+  { v: "accelerating", label: "Accelerating" },
+  { v: "peaking", label: "Peaking" },
+  { v: "declining", label: "Declining" },
+  { v: "resurfaced", label: "Resurfaced" },
+  { v: "dormant", label: "Dormant" },
+];
+
+const SENTIMENTS = [
+  { v: "", label: "any" },
+  { v: "positive", label: "positive" },
+  { v: "neutral", label: "neutral" },
+  { v: "negative", label: "negative" },
+  { v: "divided", label: "divided" },
+];
+
+function useDebounced(value, delay) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return v;
+}
+
+function ProDropdown({ label, value, options, onChange, testid, unlocked, disabled }) {
   const [open, setOpen] = useState(false);
-
-  if (tier === "free" || (error && error.code === 402)) {
-    return (
-      <div data-testid="sector-filter-locked">
-        <LockedFeature feature="sector filter" compact />
-      </div>
-    );
-  }
-  if (error) return <ErrorState error={error} title="Sectors unavailable" />;
-  const sectors = data?.data || [];
-
+  const displayValue = options.find((o) => o.v === value)?.label ?? value ?? "all";
+  if (!unlocked) return null;
   return (
     <div className="relative">
       <button
-        data-testid="sector-filter"
+        data-testid={testid}
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/60 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-neutral-200 hover:bg-secondary"
+        className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/60 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-neutral-200 hover:bg-secondary disabled:opacity-40"
       >
-        <span className="text-muted-foreground">sector</span>
-        <span>{value || "all"}</span>
+        <span className="text-muted-foreground">{label}</span>
+        <span>{displayValue || "all"}</span>
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
         <div className="absolute z-20 mt-1 min-w-40 rounded-sm border hairline bg-background/95 p-1 backdrop-blur">
-          <button
-            onClick={() => { onChange(""); setOpen(false); }}
-            className="block w-full rounded-sm px-2 py-1 text-left mono text-[11px] uppercase tracking-widest text-neutral-200 hover:bg-secondary"
-          >
-            all
-          </button>
-          {sectors.map((s) => (
+          {options.map((o) => (
             <button
-              key={s.sector}
-              onClick={() => { onChange(s.sector); setOpen(false); }}
-              className="flex w-full items-center justify-between rounded-sm px-2 py-1 text-left mono text-[11px] uppercase tracking-widest text-neutral-200 hover:bg-secondary"
+              key={o.v || "_all"}
+              onClick={() => {
+                onChange(o.v);
+                setOpen(false);
+              }}
+              className="block w-full rounded-sm px-2 py-1 text-left mono text-[11px] uppercase tracking-widest text-neutral-200 hover:bg-secondary"
             >
-              <span>{s.sector}</span>
-              <span className="text-muted-foreground">{s.topic_count}</span>
+              {o.label}
             </button>
           ))}
         </div>
@@ -63,18 +76,39 @@ function SectorFilter({ value, onChange }) {
   );
 }
 
-function TopicRow({ topic, rank }) {
-  const spark = useMemo(() => {
-    // We don't have per-topic history in the ranked feed — sparkline is
-    // populated on Topic Detail. Here we render an inert placeholder so the
-    // row stays honest about what we know.
-    return null;
-  }, []);
+function SectorFilter({ value, onChange }) {
+  const { tier } = useTier();
+  const { data, error } = useSectors();
+  if (tier === "free" || (error && error.code === 402)) {
+    return <LockedFeature feature="sector filter" compact />;
+  }
+  if (error) return <ErrorState error={error} title="Sectors unavailable" />;
+  const options = [
+    { v: "", label: "all" },
+    ...(data?.data || []).map((s) => ({ v: s.sector, label: `${s.sector} (${s.topic_count})` })),
+  ];
+  return (
+    <ProDropdown
+      testid="sector-filter"
+      label="sector"
+      value={value}
+      options={options}
+      onChange={onChange}
+      unlocked
+    />
+  );
+}
 
+function TopicRow({ topic, rank }) {
+  const isDivided =
+    topic.sentiment &&
+    topic.sentiment.mean != null &&
+    Math.abs(topic.sentiment.mean) < 0.15 &&
+    (topic.sentiment.polarisation ?? 0) > 0.35;
   return (
     <li
       data-testid={`topic-row-${topic.topic_id}`}
-      className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-b hairline px-3 py-3 hover:bg-secondary/30 sm:grid-cols-[36px_1fr_120px_160px_120px_auto] sm:gap-4"
+      className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-b hairline px-3 py-3 hover:bg-secondary/30 sm:grid-cols-[36px_1fr_150px_180px_120px] sm:gap-4"
     >
       <div className="mono text-xs text-muted-foreground text-right">#{rank}</div>
       <div className="min-w-0">
@@ -89,12 +123,16 @@ function TopicRow({ topic, rank }) {
           <StatusChip status={topic.status} />
           {topic.sector && (
             <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              {topic.sector}{topic.subsector ? ` · ${topic.subsector}` : ""}
+              {topic.sector}
+              {topic.subsector ? ` · ${topic.subsector}` : ""}
             </span>
           )}
           <span className="mono text-[10px] text-muted-foreground">
             {formatCompact(topic.member_count)} items
           </span>
+          {isDivided && (
+            <span className="mono text-[10px] uppercase tracking-widest heat-3">divided</span>
+          )}
         </div>
       </div>
       <div className="hidden sm:block">
@@ -113,40 +151,66 @@ function TopicRow({ topic, rank }) {
           {topic.signals?.velocity != null ? topic.signals.velocity.toFixed(4) : "—"}
         </div>
       </div>
-      <div className="col-span-3 flex items-center justify-between sm:col-auto sm:justify-end">
-        {/* Mobile summary: heat + sentiment inline */}
-        <div className="flex items-center gap-3 sm:hidden">
-          <HeatBadge
-            percentile={topic.heat_percentile}
-            confidence={topic.heat_confidence}
-            size="sm"
-          />
-          <SentimentIndicator
-            mean={topic.sentiment?.mean}
-            polarisation={topic.sentiment?.polarisation}
-            sampleSize={topic.sentiment?.sample_size}
-            size="sm"
-          />
-        </div>
-        <div className="text-neutral-500">{spark}</div>
+      {/* Mobile summary */}
+      <div className="col-span-3 flex items-center gap-3 sm:hidden">
+        <HeatBadge
+          percentile={topic.heat_percentile}
+          confidence={topic.heat_confidence}
+          size="sm"
+        />
+        <SentimentIndicator
+          mean={topic.sentiment?.mean}
+          polarisation={topic.sentiment?.polarisation}
+          sampleSize={topic.sentiment?.sample_size}
+          size="sm"
+        />
       </div>
     </li>
   );
 }
 
 export default function TrendingPage() {
+  const { tier } = useTier();
+  const isPro = tier === "pro";
   const [sector, setSector] = useState("");
   const [minConf, setMinConf] = useState(0);
+  const [status, setStatus] = useState("");
+  const [sentiment, setSentiment] = useState("");
+  const [qInput, setQInput] = useState("");
+  const q = useDebounced(qInput, 250).trim();
+  const [page, setPage] = useState(0);
 
-  const q = useTopics({
-    limit: 50,
-    sector: sector || undefined,
+  // Reset to page 0 whenever filters change
+  useEffect(() => {
+    setPage(0);
+  }, [sector, minConf, status, sentiment, q]);
+
+  const request = useTopics({
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+    sector: isPro && sector ? sector : undefined,
+    status: isPro && status ? status : undefined,
+    sentiment: isPro && sentiment ? sentiment : undefined,
     min_confidence: minConf || undefined,
+    q: q && q.length >= 2 ? q : undefined,
   });
 
-  const topics = q.data?.data || [];
-  const disclaimer = q.data?.meta?.disclaimer;
+  const topics = request.data?.data || [];
+  const meta = request.data?.meta;
+  const pagination = meta?.pagination;
+  const disclaimer = meta?.disclaimer;
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
+
+  const emptyCopy = useMemo(() => {
+    if (sentiment) {
+      return "Sentiment filtering is sparse today — many topics don't have enough comment data yet for a reading.";
+    }
+    if (q) return `No topics match "${q}".`;
+    if (sector || status || minConf) return "No topics match these filters.";
+    return "No topics right now.";
+  }, [sentiment, q, sector, status, minConf]);
+
+  const anyFilterActive = Boolean(sector || status || sentiment || q || minConf);
 
   return (
     <AppShell disclaimer={disclaimer}>
@@ -156,7 +220,10 @@ export default function TrendingPage() {
             <div className="mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
               Ranked feed
             </div>
-            <h1 className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight text-neutral-50" style={{ letterSpacing: "-0.02em" }}>
+            <h1
+              className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight text-neutral-50"
+              style={{ letterSpacing: "-0.02em" }}
+            >
               Trending Now
             </h1>
             <p className="mt-2 max-w-xl text-sm text-neutral-400">
@@ -164,33 +231,112 @@ export default function TrendingPage() {
               provisional-looking number is provisional.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <SectorFilter value={sector} onChange={setSector} />
-            <div className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2.5 py-1.5">
-              <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                min conf
-              </span>
-              <input
-                data-testid="min-confidence"
-                type="range"
-                min={0}
-                max={95}
-                step={5}
-                value={minConf * 100}
-                onChange={(e) => setMinConf(Number(e.target.value) / 100)}
-                className="scrubber w-24"
-              />
-              <span className="mono text-xs text-neutral-100 w-8 text-right">
-                {Math.round(minConf * 100)}%
-              </span>
-            </div>
+        </div>
+
+        {/* Search */}
+        <div className="mt-6">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              data-testid="search-input"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder="Search topics, entities, summaries…"
+              className="w-full rounded-sm border hairline bg-background/60 py-2 pl-8 pr-8 text-sm text-neutral-100 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[hsl(25_95%_55%)]"
+            />
+            {qInput && (
+              <button
+                data-testid="search-clear"
+                onClick={() => setQInput("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-neutral-100"
+                title="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
+          {qInput && qInput.length < 2 && (
+            <div className="mt-1 mono text-[10px] uppercase tracking-widest text-neutral-500">
+              type at least 2 characters
+            </div>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <SectorFilter value={sector} onChange={setSector} />
+          {isPro ? (
+            <ProDropdown
+              testid="status-filter"
+              label="status"
+              value={status}
+              onChange={setStatus}
+              options={[{ v: "", label: "all" }, ...STATUSES.map((s) => ({ v: s.v, label: s.label.toLowerCase() }))]}
+              unlocked
+            />
+          ) : (
+            <LockedFeature feature="status filter" compact />
+          )}
+          {isPro ? (
+            <ProDropdown
+              testid="sentiment-filter"
+              label="sentiment"
+              value={sentiment}
+              onChange={setSentiment}
+              options={SENTIMENTS}
+              unlocked
+            />
+          ) : (
+            <LockedFeature feature="sentiment filter" compact />
+          )}
+          <div className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2.5 py-1.5">
+            <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              min conf
+            </span>
+            <input
+              data-testid="min-confidence"
+              type="range"
+              min={0}
+              max={95}
+              step={5}
+              value={minConf * 100}
+              onChange={(e) => setMinConf(Number(e.target.value) / 100)}
+              className="scrubber w-24"
+            />
+            <span className="mono text-xs text-neutral-100 w-8 text-right">
+              {Math.round(minConf * 100)}%
+            </span>
+          </div>
+          {anyFilterActive && (
+            <button
+              data-testid="clear-filters"
+              onClick={() => {
+                setSector("");
+                setStatus("");
+                setSentiment("");
+                setMinConf(0);
+                setQInput("");
+              }}
+              className="inline-flex items-center gap-1 rounded-sm border hairline bg-background/60 px-2 py-1.5 mono text-[11px] uppercase tracking-widest text-muted-foreground hover:text-neutral-100"
+            >
+              <X className="h-3 w-3" />
+              clear
+            </button>
+          )}
+          {status && isPro && (
+            <span
+              data-testid="status-caveat"
+              className="mono text-[10px] uppercase tracking-widest text-amber-300"
+              title="Every topic is 'emerging' today — the full lifecycle classifier ships later"
+            >
+              lifecycle stages roll out later
+            </span>
+          )}
         </div>
 
         <div className="mt-6 rounded-sm border hairline bg-background/40">
-          {/* Header row */}
           <div
-            className="hidden sm:grid grid-cols-[36px_1fr_120px_160px_120px_auto] items-center gap-4 border-b hairline px-3 py-2 mono text-[10px] uppercase tracking-widest text-muted-foreground"
+            className="hidden sm:grid grid-cols-[36px_1fr_150px_180px_120px] items-center gap-4 border-b hairline px-3 py-2 mono text-[10px] uppercase tracking-widest text-muted-foreground"
             aria-hidden="true"
           >
             <div className="text-right">#</div>
@@ -198,27 +344,61 @@ export default function TrendingPage() {
             <div>Heat · Conf</div>
             <div>Sentiment</div>
             <div>Velocity</div>
-            <div />
           </div>
 
           {!hasKey ? (
-            <div className="p-4"><NoKeyState /></div>
-          ) : q.isError ? (
-            <div className="p-4"><ErrorState error={q.error} /></div>
-          ) : q.isLoading ? (
+            <div className="p-4">
+              <NoKeyState />
+            </div>
+          ) : request.isError ? (
+            <div className="p-4">
+              <ErrorState error={request.error} />
+            </div>
+          ) : request.isLoading && !request.data ? (
             <div className="p-6 text-center mono text-xs text-muted-foreground">
               loading ranked topics…
             </div>
           ) : topics.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              No topics match these filters.
+              {emptyCopy}
             </div>
           ) : (
             <ol data-testid="topics-list">
               {topics.map((t, i) => (
-                <TopicRow key={t.topic_id} topic={t} rank={i + 1} />
+                <TopicRow key={t.topic_id} topic={t} rank={page * PAGE_SIZE + i + 1} />
               ))}
             </ol>
+          )}
+
+          {/* Pagination footer */}
+          {pagination && (
+            <div className="flex items-center justify-between gap-3 border-t hairline px-3 py-2 mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              <div>
+                <span className="text-neutral-200">
+                  {topics.length > 0 ? page * PAGE_SIZE + 1 : 0}–{page * PAGE_SIZE + topics.length}
+                </span>
+                <span className="mx-1">/</span>
+                <span className="text-neutral-200">{pagination.total}</span> topics
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  data-testid="page-prev"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0 || request.isFetching}
+                  className="inline-flex items-center gap-1 rounded-sm border hairline px-2 py-1 text-neutral-200 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3 w-3" /> prev
+                </button>
+                <button
+                  data-testid="page-next"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={!pagination.has_more || request.isFetching}
+                  className="inline-flex items-center gap-1 rounded-sm border hairline px-2 py-1 text-neutral-200 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  next <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

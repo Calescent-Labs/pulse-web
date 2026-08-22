@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Link2, Lock, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter, Link2, Lock, Pause, Play, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ErrorState, EmptyState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
@@ -10,10 +10,11 @@ import { HeatBadge } from "../components/HeatBadge";
 import { StatusChip } from "../components/StatusChip";
 import { useMap, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
-import { formatCompact, formatHoursAgo, formatRelativeFromISO, safeName } from "../lib/format";
+import { formatCompact, formatHoursAgo, safeName } from "../lib/format";
 
 const WINDOWS = ["24h", "72h", "7d", "30d"];
 const FREE_WINDOWS = new Set(["24h"]);
+const PERCENTILES = ["10", "25", "50", "all"];
 
 function useDebounced(value, delay) {
   const [v, setV] = useState(value);
@@ -24,11 +25,16 @@ function useDebounced(value, delay) {
   return v;
 }
 
-function useFixedBounds(points) {
-  // Bounds must be stable across window/asof changes. We remember the first
-  // non-empty bounds we see this session — UMAP is fitted once per server
-  // process, so this is a true fixed frame.
+/**
+ * Session-scoped bounds. UMAP is refit on server restart, so remember the
+ * first non-empty bounds we see, and invalidate whenever the query errors
+ * or we switch back from an empty result (which may indicate a gap).
+ */
+function useFixedBounds(points, resetToken) {
   const ref = useRef(null);
+  useEffect(() => {
+    ref.current = null;
+  }, [resetToken]);
   return useMemo(() => {
     if (ref.current) return ref.current;
     if (!points || !points.length) return null;
@@ -52,11 +58,14 @@ export default function MapPage() {
   const { tier } = useTier();
 
   const win = params.get("window") || "24h";
-  const asof = params.get("asof") || ""; // ISO string
+  const asof = params.get("asof") || "";
   const colorBy = params.get("color") === "velocity" ? "velocity" : "age";
   const showHeat = params.get("heat") !== "0";
+  const mode = params.get("mode") === "moment" ? "moment" : "cumulative";
+  const percentile = PERCENTILES.includes(params.get("percentile")) ? params.get("percentile") : "25";
+  const focusTopicId = params.get("topic_id") ? Number(params.get("topic_id")) : undefined;
 
-  // Scrubber UI holds a hoursBack value; commits into asof (debounced).
+  // Scrubber UI (Pro only)
   const [scrubHours, setScrubHours] = useState(() => {
     if (!asof) return 0;
     const diff = (Date.now() - new Date(asof).getTime()) / 3600000;
@@ -65,14 +74,13 @@ export default function MapPage() {
   const debouncedScrub = useDebounced(scrubHours, 250);
 
   useEffect(() => {
-    if (tier !== "pro") return; // free tier can't set asof
+    if (tier !== "pro") return;
     const next = new URLSearchParams(params);
     if (debouncedScrub === 0) next.delete("asof");
     else next.set("asof", new Date(Date.now() - debouncedScrub * 3600000).toISOString());
     setParams(next, { replace: true });
   }, [debouncedScrub, tier, params, setParams]);
 
-  // Playback (Pro-only, sweeps asof back to front)
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!playing || tier !== "pro") return;
@@ -93,8 +101,14 @@ export default function MapPage() {
   );
 
   const limit = typeof window !== "undefined" && window.innerWidth < 768 ? 1200 : 2500;
-  const mapQuery = useMap({ window: win, asof: asof || undefined, limit });
-  // Topics feed for colour-by-velocity + click-to-detail
+  const mapQuery = useMap({
+    window: win,
+    asof: asof || undefined,
+    limit,
+    mode,
+    percentile: mode === "moment" ? percentile : undefined,
+    topic_id: focusTopicId,
+  });
   const topicsQuery = useTopics({ limit: 100 });
   const topicsMap = useMemo(() => {
     const m = new Map();
@@ -103,9 +117,13 @@ export default function MapPage() {
   }, [topicsQuery.data]);
 
   const points = mapQuery.data?.data?.points || [];
-  const bounds = useFixedBounds(points);
+  const noteMsg = mapQuery.data?.data?.note;
+  // Bounds reset when mode/window changes, since Moment mode's sparse sample
+  // may not cover the same extent; keep the fixed geography contract.
+  const bounds = useFixedBounds(points, focusTopicId ? "focus" : `${mode}:${win}`);
   const disclaimer = mapQuery.data?.meta?.disclaimer;
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
+  const returnedMode = mapQuery.data?.data?.mode || mapQuery.data?.meta?.mode || mode;
 
   const [hover, setHover] = useState(null);
   const [openTopic, setOpenTopic] = useState(null);
@@ -127,10 +145,12 @@ export default function MapPage() {
 
   const asOfStamp = mapQuery.data?.meta?.as_of || mapQuery.data?.meta?.generated_at;
 
+  const focusTopic = focusTopicId != null ? topicsMap.get(focusTopicId) : null;
+
   return (
     <AppShell disclaimer={disclaimer} dense>
       <div data-testid="map-page" className="relative h-[calc(100vh-104px)] w-full">
-        {/* Map canvas layer */}
+        {/* Canvas layer */}
         <div className="absolute inset-0">
           {!hasKey ? (
             <div className="p-4"><NoKeyState /></div>
@@ -146,10 +166,16 @@ export default function MapPage() {
               </div>
             </div>
           ) : points.length === 0 ? (
-            <div className="p-4">
+            <div className="p-6">
               <EmptyState
-                title="No content in this window"
-                note={mapQuery.data?.data?.note || "Try widening the window."}
+                title={mode === "moment" ? "No moment data here" : "No content in this window"}
+                note={
+                  noteMsg
+                    ? noteMsg
+                    : mode === "moment"
+                    ? "Moment mode has data from 2026-07-15 onward. Try a later timestamp or switch to Cumulative."
+                    : "Try widening the window."
+                }
               />
             </div>
           ) : (
@@ -165,7 +191,28 @@ export default function MapPage() {
           )}
         </div>
 
-        {/* Overlay: controls (top) */}
+        {/* Focus banner */}
+        {focusTopicId != null && (
+          <div className="pointer-events-auto absolute left-3 top-14 z-10 inline-flex items-center gap-2 rounded-sm border hairline bg-background/90 px-3 py-1.5 backdrop-blur">
+            <Filter className="h-3 w-3 text-neutral-200" />
+            <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              focus
+            </span>
+            <span className="text-xs text-neutral-100">
+              {focusTopic ? safeName(focusTopic) : `Topic #${focusTopicId}`}
+            </span>
+            <button
+              data-testid="clear-focus"
+              onClick={() => setParam("topic_id", "")}
+              className="ml-1 rounded-sm p-0.5 text-muted-foreground hover:text-neutral-100"
+              title="Show every point again"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Top controls */}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start gap-2 p-3">
           <div className="pointer-events-auto flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
             {WINDOWS.map((w) => {
@@ -192,10 +239,62 @@ export default function MapPage() {
             })}
           </div>
 
+          {/* Mode toggle */}
+          <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
+            <button
+              data-testid="mode-cumulative"
+              onClick={() => setParam("mode", "")}
+              className={`rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
+                mode === "cumulative"
+                  ? "bg-secondary text-neutral-50"
+                  : "text-muted-foreground hover:text-neutral-100"
+              }`}
+              title="Everything published in the window"
+            >
+              cumulative
+            </button>
+            <button
+              data-testid="mode-moment"
+              onClick={() => setParam("mode", "moment")}
+              className={`rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
+                mode === "moment"
+                  ? "bg-secondary text-neutral-50"
+                  : "text-muted-foreground hover:text-neutral-100"
+              }`}
+              title="Only what was actively moving at asof — sparser, sharper"
+            >
+              moment
+            </button>
+          </div>
+
+          {/* Percentile selector — only in moment mode */}
+          {mode === "moment" && (
+            <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
+              <span className="px-2 mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                top
+              </span>
+              {PERCENTILES.map((p) => (
+                <button
+                  key={p}
+                  data-testid={`percentile-${p}`}
+                  onClick={() => setParam("percentile", p === "25" ? "" : p)}
+                  className={`rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
+                    percentile === p
+                      ? "bg-secondary text-neutral-50"
+                      : "text-muted-foreground hover:text-neutral-100"
+                  }`}
+                  title={p === "all" ? "Everything alive at asof" : `Top ${p}% by velocity that hour`}
+                >
+                  {p === "all" ? "all" : `${p}%`}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
             <button
               data-testid="color-age"
-              onClick={() => setParam("color", "age")}
+              onClick={() => setParam("color", "")}
               className={`rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
                 colorBy === "age" ? "bg-secondary text-neutral-50" : "text-muted-foreground hover:text-neutral-100"
               }`}
@@ -232,28 +331,35 @@ export default function MapPage() {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1600);
               } catch {
-                // clipboard blocked — fall back to prompt
                 if (typeof window !== "undefined") window.prompt("Copy this link:", url);
               }
             }}
             className="pointer-events-auto inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-muted-foreground transition-colors hover:text-neutral-100"
-            title="Copy a link to this exact map view — window, timestamp, and colour mode"
+            title="Copy a link to this exact map view"
           >
             <Link2 className="h-3 w-3" />
             {copied ? "copied" : "share link"}
           </button>
 
           <div className="pointer-events-auto ml-auto rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            {(mapQuery.data?.data?.reference_size ?? points.length).toLocaleString()} pts
+            <span className="text-neutral-200">{points.length.toLocaleString()}</span> shown
+            {mapQuery.data?.data?.reference_size ? (
+              <span className="ml-2 text-neutral-500">
+                / {mapQuery.data.data.reference_size.toLocaleString()} in scope
+              </span>
+            ) : null}
             {mapQuery.data?.data?.duplicates_collapsed > 0 && (
               <span className="ml-2 text-neutral-500">
                 · {mapQuery.data.data.duplicates_collapsed} re-uploads hidden
               </span>
             )}
+            {returnedMode === "moment" && (
+              <span className="ml-2 heat-2">moment</span>
+            )}
           </div>
         </div>
 
-        {/* Scrubber (bottom) */}
+        {/* Scrubber */}
         <div className="pointer-events-auto absolute inset-x-3 bottom-3 z-10 rounded-sm border hairline bg-background/90 p-3 backdrop-blur">
           {tier === "pro" ? (
             <>
@@ -336,7 +442,7 @@ export default function MapPage() {
           </div>
         )}
 
-        {/* Side panel for clicked point */}
+        {/* Side panel */}
         {openTopic && (
           <aside
             data-testid="map-side-panel"
@@ -388,7 +494,7 @@ export default function MapPage() {
                       {openTopic.topic.summary}
                     </p>
                   )}
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     <Link
                       to={`/topic/${openTopic.topic.topic_id}`}
                       data-testid="open-topic-detail"
@@ -396,6 +502,18 @@ export default function MapPage() {
                     >
                       Open topic detail →
                     </Link>
+                    <button
+                      data-testid="focus-on-topic"
+                      onClick={() => {
+                        setParam("topic_id", String(openTopic.topic.topic_id));
+                        setOpenTopic(null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-sm border hairline bg-background px-3 py-1.5 text-xs text-neutral-200 hover:bg-secondary"
+                      title="Show only this topic's points on the map"
+                    >
+                      <Filter className="h-3 w-3" />
+                      Focus on map
+                    </button>
                   </div>
                 </>
               ) : (
@@ -404,14 +522,6 @@ export default function MapPage() {
                   {" "}&ldquo;noise&rdquo; is normal and usually the majority.
                 </div>
               )}
-              <div className="mt-6">
-                <a
-                  href={openTopic.point.title ? undefined : undefined}
-                  className="text-xs text-muted-foreground"
-                >
-                  Content links are available from the topic detail page.
-                </a>
-              </div>
             </div>
           </aside>
         )}

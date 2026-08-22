@@ -11,7 +11,7 @@ import { StatusChip } from "../components/StatusChip";
 import { LockedFeature } from "../components/LockedFeature";
 import { ErrorState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
-import { useTopic } from "../lib/queries";
+import { useNeighbours, useTopic } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
 import {
   formatCompact, formatConfidence, formatPercentile, formatRelativeFromISO,
@@ -54,6 +54,7 @@ export default function TopicDetailPage() {
 
   const [historyHours, setHistoryHours] = useState(24);
   const q = useTopic({ topicId, history_hours: historyHours, members: 50 });
+  const neighboursQ = useNeighbours({ topicId, limit: 6 });
 
   const topic = q.data?.data || null;
   const history = topic?.history || [];
@@ -334,6 +335,85 @@ export default function TopicDetailPage() {
                 </ul>
               </ChartCard>
             </div>
+
+            {/* Related topics — nearest neighbours by centroid distance */}
+            <section
+              data-testid="related-topics"
+              className="mt-4 rounded-sm border hairline bg-background/40 p-4"
+            >
+              <div className="flex items-baseline justify-between">
+                <h3 className="mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Related topics
+                </h3>
+                <span className="mono text-[10px] text-neutral-500">
+                  by centroid distance · 0 identical → 2 opposite
+                </span>
+              </div>
+              <div className="mt-3">
+                {neighboursQ.isError ? (
+                  neighboursQ.error?.code === 404 ? (
+                    <div className="text-xs text-muted-foreground">
+                      This topic has no comparable centroid yet — new topics need a few hours to
+                      settle before neighbours are meaningful.
+                    </div>
+                  ) : (
+                    <ErrorState error={neighboursQ.error} title="Neighbours unavailable" />
+                  )
+                ) : neighboursQ.isLoading ? (
+                  <div className="mono text-xs text-muted-foreground">loading neighbours…</div>
+                ) : (neighboursQ.data?.data || []).length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    No comparable topics found — this one sits far from the rest of the map.
+                  </div>
+                ) : (
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {neighboursQ.data.data.map((n) => {
+                      // distance is cosine 0..2; smaller = closer.
+                      // 0 → 100% match; 2 → 0%.
+                      const closeness = Math.max(0, Math.min(1, 1 - (n.distance ?? 1) / 2));
+                      return (
+                        <li key={n.topic_id}>
+                          <Link
+                            to={`/topic/${n.topic_id}`}
+                            data-testid={`neighbour-${n.topic_id}`}
+                            className="group flex items-start justify-between gap-3 rounded-sm border hairline px-3 py-2 no-underline hover:bg-secondary/40"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm text-neutral-100 group-hover:text-white">
+                                {n.name || `Topic #${n.topic_id}`}
+                              </div>
+                              <div className="mt-0.5 flex items-center gap-2">
+                                {n.sector && (
+                                  <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                                    {n.sector}
+                                  </span>
+                                )}
+                                <HeatBadge
+                                  percentile={n.heat_percentile}
+                                  confidence={n.heat_confidence}
+                                  size="sm"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 text-right">
+                              <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                                closeness
+                              </div>
+                              <div className="mono text-sm text-neutral-100">
+                                {Math.round(closeness * 100)}%
+                              </div>
+                              <div className="mono text-[10px] text-neutral-500">
+                                d={n.distance != null ? n.distance.toFixed(3) : "—"}
+                              </div>
+                            </div>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </section>
           </>
         )}
       </div>
