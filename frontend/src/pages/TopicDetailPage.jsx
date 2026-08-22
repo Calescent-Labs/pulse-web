@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ExternalLink, Lock, AlertTriangle } from "lucide-react";
+import { ExternalLink, Lock, AlertTriangle, GitCompare, Pin, X as XIcon } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
@@ -38,6 +38,124 @@ function ChartCard({ title, note, children }) {
   );
 }
 
+const COMPARE_COLORS = {
+  origin: "hsl(220, 8%, 78%)",
+  a: "hsl(25, 95%, 60%)",
+  b: "hsl(268, 65%, 65%)",
+};
+
+function ComparePanel({
+  origin, originHistory, compareA, compareB, loadingA, loadingB,
+  onClearA, onClearB, onClearAll,
+}) {
+  // Merge histories by bucket timestamp so recharts can plot them together.
+  const merged = useMemo(() => {
+    const map = new Map();
+    const put = (hist, key) => {
+      (hist || []).forEach((h) => {
+        if (!h || !h.bucket_ts) return;
+        const t = new Date(h.bucket_ts).getTime();
+        if (Number.isNaN(t)) return;
+        if (!map.has(t)) map.set(t, { ts: t });
+        map.get(t)[key] = h.velocity;
+      });
+    };
+    put(originHistory, "v_origin");
+    put(compareA?.history, "v_a");
+    put(compareB?.history, "v_b");
+    return Array.from(map.values()).sort((x, y) => x.ts - y.ts);
+  }, [originHistory, compareA, compareB]);
+
+  const tickFmt = (t) => {
+    const d = new Date(t);
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${d.getUTCHours()}:00`;
+  };
+
+  const Chip = ({ color, label, onClear, loading, testid }) => (
+    <span
+      data-testid={testid}
+      className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/70 px-2 py-0.5 mono text-[10px] uppercase tracking-widest text-neutral-200"
+    >
+      <span className="inline-block h-0.5 w-4 rounded-sm" style={{ background: color }} />
+      <span className="max-w-[140px] truncate normal-case tracking-normal">{label || "…"}</span>
+      {loading && <span className="text-muted-foreground">loading</span>}
+      {onClear && (
+        <button
+          onClick={onClear}
+          className="ml-1 rounded-sm text-muted-foreground hover:text-neutral-100"
+          title="Unpin"
+        >
+          <XIcon className="h-2.5 w-2.5" />
+        </button>
+      )}
+    </span>
+  );
+
+  return (
+    <div
+      data-testid="compare-panel"
+      className="mt-4 rounded-sm border hairline bg-secondary/20 p-3"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          compare · 24h velocity
+        </span>
+        <Chip color={COMPARE_COLORS.origin} label={origin?.name || `Topic #${origin?.topic_id}`} testid="compare-chip-origin" />
+        {compareA && (
+          <Chip color={COMPARE_COLORS.a} label={compareA.name || `Topic #${compareA.topic_id}`} onClear={onClearA} testid="compare-chip-a" />
+        )}
+        {!compareA && loadingA && <Chip color={COMPARE_COLORS.a} label="loading" loading testid="compare-chip-a" />}
+        {compareB && (
+          <Chip color={COMPARE_COLORS.b} label={compareB.name || `Topic #${compareB.topic_id}`} onClear={onClearB} testid="compare-chip-b" />
+        )}
+        {!compareB && loadingB && <Chip color={COMPARE_COLORS.b} label="loading" loading testid="compare-chip-b" />}
+        <button
+          data-testid="compare-clear-all"
+          onClick={onClearAll}
+          className="ml-auto mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-neutral-100"
+        >
+          clear
+        </button>
+      </div>
+      <div className="mt-2 h-40 w-full">
+        <ResponsiveContainer>
+          <LineChart data={merged} margin={{ top: 8, right: 8, bottom: 4, left: -20 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+            <XAxis
+              dataKey="ts"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={tickFmt}
+              tick={{ fill: "hsl(220 8% 58%)", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+              axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+              tickLine={false}
+              minTickGap={40}
+            />
+            <YAxis
+              tick={{ fill: "hsl(220 8% 58%)", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+              axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+              tickLine={false}
+              width={38}
+            />
+            <Tooltip
+              contentStyle={{ background: "#0e1117", border: "1px solid #2a2f3a", fontFamily: "IBM Plex Mono", fontSize: 11 }}
+              labelFormatter={(v) => new Date(v).toUTCString()}
+            />
+            <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" />
+            <Line type="monotone" dataKey="v_origin" stroke={COMPARE_COLORS.origin} strokeWidth={1.25} dot={false} connectNulls={false} />
+            {compareA && (
+              <Line type="monotone" dataKey="v_a" stroke={COMPARE_COLORS.a} strokeWidth={1.5} dot={false} connectNulls={false} />
+            )}
+            {compareB && (
+              <Line type="monotone" dataKey="v_b" stroke={COMPARE_COLORS.b} strokeWidth={1.5} dot={false} connectNulls={false} />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 function MetricCell({ label, value, sub }) {
   return (
     <div>
@@ -56,6 +174,33 @@ export default function TopicDetailPage() {
   const [historyHours, setHistoryHours] = useState(24);
   const q = useTopic({ topicId, history_hours: historyHours, members: 50 });
   const neighboursQ = useNeighbours({ topicId, limit: 6 });
+
+  // Compare tray — up to two pinned neighbours. Origin topic is always
+  // included as the baseline line, so the panel becomes a real research
+  // surface: "does this neighbour lead, follow, or diverge from us?"
+  const [compareIds, setCompareIds] = useState([]);
+  useEffect(() => {
+    // Reset the tray when the origin topic changes.
+    setCompareIds([]);
+  }, [topicId]);
+  const compareA = useTopic({
+    topicId: compareIds[0] != null ? compareIds[0] : NaN,
+    history_hours: 24,
+    members: 0,
+  });
+  const compareB = useTopic({
+    topicId: compareIds[1] != null ? compareIds[1] : NaN,
+    history_hours: 24,
+    members: 0,
+  });
+
+  const togglePin = (nid) => {
+    setCompareIds((cur) => {
+      if (cur.includes(nid)) return cur.filter((x) => x !== nid);
+      if (cur.length >= 2) return [cur[1], nid]; // rolling window
+      return [...cur, nid];
+    });
+  };
 
   const topic = q.data?.data || null;
   const history = topic?.history || [];
@@ -350,6 +495,52 @@ export default function TopicDetailPage() {
                   by centroid distance · 0 identical → 2 opposite
                 </span>
               </div>
+              {/* Radar legend */}
+              <div className="mt-2 flex flex-wrap items-center gap-3 mono text-[10px] uppercase tracking-widest text-neutral-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex gap-[3px]">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <span
+                        key={i}
+                        className="block h-1.5 w-1.5 rounded-[1px]"
+                        style={{ background: "hsl(25, 95%, 60%)" }}
+                      />
+                    ))}
+                  </span>
+                  <span>5 lit · identical</span>
+                </span>
+                <span>→</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex gap-[3px]">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <span
+                        key={i}
+                        className="block h-1.5 w-1.5 rounded-[1px]"
+                        style={{ background: "rgba(255,255,255,0.06)" }}
+                      />
+                    ))}
+                  </span>
+                  <span>0 lit · opposite</span>
+                </span>
+                <span className="text-neutral-600">·</span>
+                <span>hover a tile to reveal <span className="text-neutral-300">compare</span> · pin up to 2</span>
+              </div>
+
+              {/* Compare panel */}
+              {compareIds.length > 0 && (
+                <ComparePanel
+                  origin={topic}
+                  originHistory={history}
+                  compareA={compareIds[0] != null ? compareA.data?.data : null}
+                  compareB={compareIds[1] != null ? compareB.data?.data : null}
+                  loadingA={compareA.isLoading}
+                  loadingB={compareB.isLoading}
+                  onClearA={() => setCompareIds((c) => c.filter((_, i) => i !== 0))}
+                  onClearB={() => setCompareIds((c) => c.filter((_, i) => i !== 1))}
+                  onClearAll={() => setCompareIds([])}
+                />
+              )}
+
               <div className="mt-3">
                 {neighboursQ.isError ? (
                   neighboursQ.error?.code === 404 ? (
@@ -369,15 +560,35 @@ export default function TopicDetailPage() {
                 ) : (
                   <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {neighboursQ.data.data.map((n) => {
-                      // distance is cosine 0..2; smaller = closer.
-                      // 0 → 100% match; 2 → 0%.
                       const closeness = Math.max(0, Math.min(1, 1 - (n.distance ?? 1) / 2));
+                      const pinned = compareIds.includes(n.topic_id);
                       return (
-                        <li key={n.topic_id}>
+                        <li key={n.topic_id} className="group relative">
+                          {/* Compare pin — always visible (muted), highlights on hover.
+                              Bottom-left to avoid the closeness column at top-right. */}
+                          <button
+                            data-testid={`compare-pin-${n.topic_id}`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              togglePin(n.topic_id);
+                            }}
+                            className={`absolute left-2 bottom-2 z-10 inline-flex items-center gap-1 rounded-sm border hairline px-1.5 py-0.5 mono text-[9px] uppercase tracking-widest transition-opacity ${
+                              pinned
+                                ? "bg-[hsl(25,95%,60%)]/20 text-[hsl(25,95%,70%)] opacity-100 border-[hsl(25,95%,60%)]/40"
+                                : "bg-background/70 text-muted-foreground opacity-60 hover:opacity-100 hover:text-neutral-100"
+                            }`}
+                            title={pinned ? "Unpin from compare" : "Pin to compare"}
+                          >
+                            {pinned ? <Pin className="h-2.5 w-2.5" /> : <GitCompare className="h-2.5 w-2.5" />}
+                            {pinned ? "pinned" : "compare"}
+                          </button>
                           <Link
                             to={`/topic/${n.topic_id}`}
                             data-testid={`neighbour-${n.topic_id}`}
-                            className="group flex items-start justify-between gap-3 rounded-sm border hairline px-3 py-2 no-underline hover:bg-secondary/40"
+                            className={`flex items-start justify-between gap-3 rounded-sm border hairline px-3 py-2 pb-8 no-underline hover:bg-secondary/40 ${
+                              pinned ? "ring-1 ring-[hsl(25,95%,60%)]/40" : ""
+                            }`}
                           >
                             <div className="min-w-0">
                               <div className="truncate text-sm text-neutral-100 group-hover:text-white">

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { HeatBadge } from "../components/HeatBadge";
@@ -205,14 +205,35 @@ function TopicRow({ topic, rank }) {
 export default function TrendingPage() {
   const { tier } = useTier();
   const isPro = tier === "pro";
+  const [params, setParams] = useSearchParams();
   const [sector, setSector] = useState("");
   const [minConf, setMinConf] = useState(0);
   const [status, setStatus] = useState("");
   const [sentiment, setSentiment] = useState("");
-  const [qInput, setQInput] = useState("");
+  // qInput is a local input mirror; the URL param `?q=` is the source of truth.
+  const urlQ = params.get("q") || "";
+  const [qInput, setQInput] = useState(urlQ);
   const q = useDebounced(qInput, 250).trim();
   const [page, setPage] = useState(0);
   const [recent, setRecent] = useState(() => loadRecentSearches());
+
+  // Sync URL → local input when the URL changes externally (chip click, back/forward).
+  useEffect(() => {
+    if (urlQ !== qInput) setQInput(urlQ);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQ]);
+
+  // Sync local (debounced) q → URL. Use `replace` while typing so continuous
+  // keystrokes don't spam history — chip clicks below use `push` so the back
+  // button walks discrete searches.
+  useEffect(() => {
+    if (q === urlQ) return;
+    const next = new URLSearchParams(params);
+    if (q) next.set("q", q);
+    else next.delete("q");
+    setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   // Commit successful (>=2 char) queries into the recent list, debounced.
   useEffect(() => {
@@ -325,7 +346,14 @@ export default function TrendingPage() {
                 <button
                   key={r}
                   data-testid={`recent-${r}`}
-                  onClick={() => setQInput(r)}
+                  onClick={() => {
+                    // Push a new history entry so the browser back button walks
+                    // yesterday's investigations naturally.
+                    const next = new URLSearchParams(params);
+                    next.set("q", r);
+                    setParams(next);
+                    setQInput(r);
+                  }}
                   className="inline-flex items-center gap-1 rounded-sm border hairline bg-background/60 px-2 py-0.5 text-xs text-neutral-200 hover:bg-secondary"
                   title={`Re-run search for "${r}"`}
                 >

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Filter, Link2, Lock, Pause, Play, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Filter, Link2, Lock, Pause, Play, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ErrorState, EmptyState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
@@ -13,6 +13,7 @@ import { useTier } from "../lib/tierContext";
 import { formatCompact, formatHoursAgo, safeName } from "../lib/format";
 import { Sparkline } from "../components/Sparkline";
 import { HeatBadge as _HeatBadge } from "../components/HeatBadge";
+import { downloadTopicOg } from "../lib/ogCanvas";
 
 const WINDOWS = ["24h", "72h", "7d", "30d"];
 const FREE_WINDOWS = new Set(["24h"]);
@@ -130,6 +131,7 @@ export default function MapPage() {
   const [hover, setHover] = useState(null);
   const [openTopic, setOpenTopic] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const onHoverPoint = useCallback((obj, x, y) => {
     if (!obj) return setHover(null);
@@ -384,11 +386,40 @@ export default function MapPage() {
               }
             }}
             className="pointer-events-auto inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-muted-foreground transition-colors hover:text-neutral-100"
-            title="Copy a link to this exact map view"
+            title={
+              focusTopicId != null
+                ? "Copy a link to this map view — carries the focused topic. Dynamic OG previews will render the topic's arc when that ships."
+                : "Copy a link to this exact map view"
+            }
           >
             <Link2 className="h-3 w-3" />
-            {copied ? "copied" : "share link"}
+            {copied ? "copied" : focusTopicId != null ? "share arc link" : "share link"}
           </button>
+
+          {focusTopicId != null && (
+            <button
+              data-testid="download-arc-png"
+              onClick={async () => {
+                const t =
+                  focusTopic ||
+                  (focusHistoryQ.data?.data ? focusHistoryQ.data.data : { topic_id: focusTopicId });
+                try {
+                  setDownloading(true);
+                  await downloadTopicOg(t, focusHistory);
+                } catch (e) {
+                  // best-effort; silent
+                } finally {
+                  setDownloading(false);
+                }
+              }}
+              disabled={focusHistoryQ.isLoading || focusHistory.length < 2}
+              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-muted-foreground transition-colors hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Download a 1200×630 preview PNG of this topic's 24h arc — attach it manually to a post today"
+            >
+              <Download className="h-3 w-3" />
+              {downloading ? "rendering…" : "preview png"}
+            </button>
+          )}
 
           <div className="pointer-events-auto ml-auto rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
             <span className="text-neutral-200">{points.length.toLocaleString()}</span> shown
