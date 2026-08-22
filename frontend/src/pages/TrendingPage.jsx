@@ -13,6 +13,31 @@ import { useTier } from "../lib/tierContext";
 import { formatCompact, safeName } from "../lib/format";
 
 const PAGE_SIZE = 30;
+const RECENT_KEY = "pulse:recentSearches";
+const RECENT_LIMIT = 3;
+
+function loadRecentSearches() {
+  try {
+    const raw = typeof localStorage !== "undefined" && localStorage.getItem(RECENT_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((s) => typeof s === "string").slice(0, RECENT_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecentSearch(term) {
+  try {
+    if (!term || term.length < 2) return;
+    const current = loadRecentSearches();
+    const next = [term, ...current.filter((t) => t.toLowerCase() !== term.toLowerCase())].slice(0, RECENT_LIMIT);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event("pulse:recentSearchesChanged"));
+  } catch {
+    /* localStorage blocked — silent */
+  }
+}
 
 const STATUSES = [
   { v: "emerging", label: "Emerging" },
@@ -25,10 +50,10 @@ const STATUSES = [
 
 const SENTIMENTS = [
   { v: "", label: "any" },
-  { v: "positive", label: "positive" },
-  { v: "neutral", label: "neutral" },
-  { v: "negative", label: "negative" },
-  { v: "divided", label: "divided" },
+  { v: "positive", label: "positive", subtitle: "mean > +0.15" },
+  { v: "neutral", label: "neutral", subtitle: "|mean| ≤ 0.15" },
+  { v: "negative", label: "negative", subtitle: "mean < −0.15" },
+  { v: "divided", label: "divided", subtitle: "|mean| < 0.15 and polarisation > 0.35 — a split audience, not indifference" },
 ];
 
 function useDebounced(value, delay) {
@@ -57,17 +82,25 @@ function ProDropdown({ label, value, options, onChange, testid, unlocked, disabl
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 min-w-40 rounded-sm border hairline bg-background/95 p-1 backdrop-blur">
+        <div className="absolute z-20 mt-1 min-w-56 rounded-sm border hairline bg-background/95 p-1 backdrop-blur">
           {options.map((o) => (
             <button
               key={o.v || "_all"}
+              data-testid={o.v ? `${testid}-opt-${o.v}` : undefined}
               onClick={() => {
                 onChange(o.v);
                 setOpen(false);
               }}
-              className="block w-full rounded-sm px-2 py-1 text-left mono text-[11px] uppercase tracking-widest text-neutral-200 hover:bg-secondary"
+              className="block w-full rounded-sm px-2 py-1.5 text-left hover:bg-secondary"
             >
-              {o.label}
+              <div className="mono text-[11px] uppercase tracking-widest text-neutral-200">
+                {o.label}
+              </div>
+              {o.subtitle && (
+                <div className="mt-0.5 mono text-[10px] normal-case tracking-normal text-muted-foreground">
+                  {o.subtitle}
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -179,6 +212,26 @@ export default function TrendingPage() {
   const [qInput, setQInput] = useState("");
   const q = useDebounced(qInput, 250).trim();
   const [page, setPage] = useState(0);
+  const [recent, setRecent] = useState(() => loadRecentSearches());
+
+  // Commit successful (>=2 char) queries into the recent list, debounced.
+  useEffect(() => {
+    if (q && q.length >= 2) {
+      pushRecentSearch(q);
+      setRecent(loadRecentSearches());
+    }
+  }, [q]);
+
+  // Sync when other tabs / components update the list.
+  useEffect(() => {
+    const onChange = () => setRecent(loadRecentSearches());
+    window.addEventListener("pulse:recentSearchesChanged", onChange);
+    window.addEventListener("storage", onChange);
+    return () => {
+      window.removeEventListener("pulse:recentSearchesChanged", onChange);
+      window.removeEventListener("storage", onChange);
+    };
+  }, []);
 
   // Reset to page 0 whenever filters change
   useEffect(() => {
@@ -258,6 +311,42 @@ export default function TrendingPage() {
           {qInput && qInput.length < 2 && (
             <div className="mt-1 mono text-[10px] uppercase tracking-widest text-neutral-500">
               type at least 2 characters
+            </div>
+          )}
+          {recent.length > 0 && !qInput && (
+            <div
+              data-testid="search-recents"
+              className="mt-2 flex flex-wrap items-center gap-1.5"
+            >
+              <span className="mono text-[10px] uppercase tracking-widest text-neutral-500">
+                recent
+              </span>
+              {recent.map((r) => (
+                <button
+                  key={r}
+                  data-testid={`recent-${r}`}
+                  onClick={() => setQInput(r)}
+                  className="inline-flex items-center gap-1 rounded-sm border hairline bg-background/60 px-2 py-0.5 text-xs text-neutral-200 hover:bg-secondary"
+                  title={`Re-run search for "${r}"`}
+                >
+                  <Search className="h-2.5 w-2.5 text-muted-foreground" />
+                  {r}
+                </button>
+              ))}
+              <button
+                data-testid="recent-clear"
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(RECENT_KEY);
+                  } catch {
+                    /* no-op */
+                  }
+                  setRecent([]);
+                }}
+                className="mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-neutral-100"
+              >
+                clear
+              </button>
             </div>
           )}
         </div>

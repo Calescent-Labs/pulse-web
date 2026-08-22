@@ -8,9 +8,11 @@ import { LockedFeature } from "../components/LockedFeature";
 import { MapCanvas } from "../components/MapCanvas";
 import { HeatBadge } from "../components/HeatBadge";
 import { StatusChip } from "../components/StatusChip";
-import { useMap, useTopics } from "../lib/queries";
+import { useMap, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
 import { formatCompact, formatHoursAgo, safeName } from "../lib/format";
+import { Sparkline } from "../components/Sparkline";
+import { HeatBadge as _HeatBadge } from "../components/HeatBadge";
 
 const WINDOWS = ["24h", "72h", "7d", "30d"];
 const FREE_WINDOWS = new Set(["24h"]);
@@ -146,6 +148,14 @@ export default function MapPage() {
   const asOfStamp = mapQuery.data?.meta?.as_of || mapQuery.data?.meta?.generated_at;
 
   const focusTopic = focusTopicId != null ? topicsMap.get(focusTopicId) : null;
+  // Fetch 24h history for the focused topic so the banner can answer
+  // "is this one rising?" without leaving the map.
+  const focusHistoryQ = useTopic({
+    topicId: focusTopicId,
+    history_hours: 24,
+    members: 0,
+  });
+  const focusHistory = focusHistoryQ.data?.data?.history || [];
 
   return (
     <AppShell disclaimer={disclaimer} dense>
@@ -191,16 +201,55 @@ export default function MapPage() {
           )}
         </div>
 
-        {/* Focus banner */}
+        {/* Focus banner — carries the focused topic's 24h velocity sparkline
+            so the map answers "is this one rising?" without leaving. */}
         {focusTopicId != null && (
-          <div className="pointer-events-auto absolute left-3 top-14 z-10 inline-flex items-center gap-2 rounded-sm border hairline bg-background/90 px-3 py-1.5 backdrop-blur">
+          <div className="pointer-events-auto absolute left-3 top-14 z-10 flex items-center gap-3 rounded-sm border hairline bg-background/90 px-3 py-2 backdrop-blur">
             <Filter className="h-3 w-3 text-neutral-200" />
-            <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              focus
-            </span>
-            <span className="text-xs text-neutral-100">
-              {focusTopic ? safeName(focusTopic) : `Topic #${focusTopicId}`}
-            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  focus
+                </span>
+                <span className="text-xs text-neutral-100 truncate max-w-[220px]">
+                  {focusTopic ? safeName(focusTopic) : focusHistoryQ.data?.data?.name || `Topic #${focusTopicId}`}
+                </span>
+              </div>
+              {focusHistoryQ.isLoading ? (
+                <div className="mono text-[10px] text-neutral-500 mt-0.5">loading 24h arc…</div>
+              ) : focusHistory.length >= 2 ? (
+                <div className="mt-1 flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="mono text-[9px] uppercase tracking-widest text-muted-foreground">
+                      24h velocity
+                    </span>
+                    <Sparkline
+                      data={focusHistory}
+                      field="velocity"
+                      width={110}
+                      height={22}
+                      stroke="hsl(25, 95%, 60%)"
+                      showZero
+                    />
+                  </div>
+                  {(() => {
+                    const latest = [...focusHistory].reverse().find((h) => h.heat_percentile != null);
+                    if (!latest) return null;
+                    return (
+                      <_HeatBadge
+                        percentile={latest.heat_percentile}
+                        confidence={latest.heat_confidence}
+                        size="sm"
+                      />
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="mono text-[10px] text-neutral-500 mt-0.5">
+                  not enough history for a sparkline
+                </div>
+              )}
+            </div>
             <button
               data-testid="clear-focus"
               onClick={() => setParam("topic_id", "")}

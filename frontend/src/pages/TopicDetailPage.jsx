@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { AppShell } from "../components/AppShell";
+import { ClosenessRadar } from "../components/ClosenessRadar";
 import { HeatBadge } from "../components/HeatBadge";
 import { SentimentIndicator } from "../components/SentimentIndicator";
 import { StatusChip } from "../components/StatusChip";
@@ -399,8 +400,11 @@ export default function TopicDetailPage() {
                               <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
                                 closeness
                               </div>
-                              <div className="mono text-sm text-neutral-100">
-                                {Math.round(closeness * 100)}%
+                              <div className="mt-0.5 flex items-center justify-end gap-1.5">
+                                <ClosenessRadar closeness={closeness} />
+                                <span className="mono text-sm text-neutral-100">
+                                  {Math.round(closeness * 100)}%
+                                </span>
                               </div>
                               <div className="mono text-[10px] text-neutral-500">
                                 d={n.distance != null ? n.distance.toFixed(3) : "—"}
