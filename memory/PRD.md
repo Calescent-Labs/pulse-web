@@ -63,8 +63,16 @@ src/
 - ✅ Trending page with sector filter (pro-gated, shows LockedFeature), min-confidence slider, mobile layout
 - ✅ Topic detail with velocity/acceleration + percentile + sentiment charts, series-break marker, member list keeping removed items visible
 - ✅ Persistent disclaimer footer sourced from `meta.disclaimer`
+- ✅ Static Open Graph card (`public/og-card.png`, 1200×630) + og/twitter meta in `public/index.html`
+- ✅ "Copy share link" button on the Map — copies current URL with `window`/`asof`/`color`/`heat` state so any deep link is shareable
 
-## Known API blockers (batched — see finish summary for details)
+## Explicit non-goals
+
+- **No auth, no user accounts, no database on our side.** The frontend must remain portable to any host; anything stateful belongs next to the heat engine.
+- **Alerts deferred entirely.** They're a Pro feature for users we don't have yet and would require auth + Mongo + hourly scheduler + email provider — a whole second stateful app. If they ship, they belong on the Pulse backend next to the heat engine that already knows when a threshold was crossed, not here.
+- **Dynamic per-URL OG cards deferred.** Would require SSR or an OG-image service; the static card is enough for site-level sharing without adding a backend dependency.
+
+## Known API blockers (batched — see `/app/API_REQUESTS.md`)
 
 Nice-to-haves and one degrader that the current v1 API can't serve. Detailed request specs are in the finish summary; each will be handed to the backend team.
 

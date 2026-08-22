@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Lock, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link2, Lock, Pause, Play } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ErrorState, EmptyState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
@@ -109,6 +109,7 @@ export default function MapPage() {
 
   const [hover, setHover] = useState(null);
   const [openTopic, setOpenTopic] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const onHoverPoint = useCallback((obj, x, y) => {
     if (!obj) return setHover(null);
@@ -138,8 +139,11 @@ export default function MapPage() {
               <ErrorState error={mapQuery.error} title="Map unavailable" />
             </div>
           ) : mapQuery.isLoading ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground mono">
-              loading semantic map…
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+              <div className="mono text-xs text-muted-foreground">loading semantic map…</div>
+              <div className="mono text-[10px] uppercase tracking-widest text-neutral-600 max-w-xs">
+                staging is tunnelled — first fetch can take up to 2 minutes.
+              </div>
             </div>
           ) : points.length === 0 ? (
             <div className="p-4">
@@ -217,6 +221,26 @@ export default function MapPage() {
             }`}
           >
             heat field {showHeat ? "on" : "off"}
+          </button>
+
+          <button
+            data-testid="copy-share-link"
+            onClick={async () => {
+              const url = typeof window !== "undefined" ? window.location.href : "";
+              try {
+                await navigator.clipboard.writeText(url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1600);
+              } catch {
+                // clipboard blocked — fall back to prompt
+                if (typeof window !== "undefined") window.prompt("Copy this link:", url);
+              }
+            }}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-muted-foreground transition-colors hover:text-neutral-100"
+            title="Copy a link to this exact map view — window, timestamp, and colour mode"
+          >
+            <Link2 className="h-3 w-3" />
+            {copied ? "copied" : "share link"}
           </button>
 
           <div className="pointer-events-auto ml-auto rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
