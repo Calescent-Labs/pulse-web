@@ -69,6 +69,8 @@ export default function MapPage() {
   const focusTopicId = params.get("topic_id") ? Number(params.get("topic_id")) : undefined;
   const view = params.get("view") === "3d" ? "3d" : "2d";
   const is3D = view === "3d";
+  // Terrain metric assignment — swap elevation vs colour without touching data.
+  const terrainMode = params.get("terrain") === "heat-count" ? "heat-count" : "count-heat";
 
   // Scrubber UI (Pro only)
   const [scrubHours, setScrubHours] = useState(() => {
@@ -296,6 +298,7 @@ export default function MapPage() {
               hoveredTopicId={hoveredTopicId}
               onHighlightScreen={setHighlightScreen}
               onRegionClick={onRegionClick}
+              terrainMode={terrainMode}
             />
           )}
         </div>
@@ -531,6 +534,42 @@ export default function MapPage() {
               3D
             </button>
           </div>
+
+          {/* Terrain metric swap — only meaningful in 3D. Toggles which
+              signal drives elevation vs colour so you can eyeball which
+              read tells the better story. */}
+          {is3D && (
+            <div
+              data-testid="terrain-mode"
+              className="pointer-events-auto inline-flex items-center rounded-sm border hairline bg-background/85 p-1 backdrop-blur"
+              title="Swap what the terrain and colour encode"
+            >
+              <button
+                data-testid="terrain-mode-count-heat"
+                onClick={() => setParam("terrain", "")}
+                className={`rounded-sm px-2 py-1 mono text-[10px] uppercase tracking-widest transition-colors ${
+                  terrainMode === "count-heat"
+                    ? "bg-secondary text-neutral-50"
+                    : "text-muted-foreground hover:text-neutral-100"
+                }`}
+                title="Elevation = quantity · Colour = heat"
+              >
+                ↕ qty · ▦ heat
+              </button>
+              <button
+                data-testid="terrain-mode-heat-count"
+                onClick={() => setParam("terrain", "heat-count")}
+                className={`rounded-sm px-2 py-1 mono text-[10px] uppercase tracking-widest transition-colors ${
+                  terrainMode === "heat-count"
+                    ? "bg-secondary text-neutral-50"
+                    : "text-muted-foreground hover:text-neutral-100"
+                }`}
+                title="Elevation = heat · Colour = quantity"
+              >
+                ↕ heat · ▦ qty
+              </button>
+            </div>
+          )}
 
           <button
             data-testid="copy-share-link"

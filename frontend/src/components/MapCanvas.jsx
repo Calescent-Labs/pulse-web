@@ -55,6 +55,7 @@ export function MapCanvas({
   hoveredTopicId,
   onHighlightScreen,
   onRegionClick,
+  terrainMode = "count-heat",
 }) {
   const is3D = view === "3d";
 
@@ -87,11 +88,18 @@ export function MapCanvas({
     return points.filter((p) => p.topic_id === hoveredTopicId);
   }, [points, hoveredTopicId, is3D]);
 
-  // Terrain mesh — built once per (cells, bounds) update.
+  // Terrain mesh — rebuilt when cells, bounds, or the metric mapping change.
   const terrain = useMemo(() => {
     if (!is3D) return null;
-    return buildTerrainMesh({ cells, bounds, resolution: 50, elevationScale: 3.5 });
-  }, [is3D, cells, bounds]);
+    return buildTerrainMesh({
+      cells,
+      bounds,
+      mode: terrainMode,
+      resolution: 72,
+      elevationScale: 3.8,
+      blurPasses: 5,
+    });
+  }, [is3D, cells, bounds, terrainMode]);
 
   const layers = useMemo(() => {
     const out = [];
@@ -108,7 +116,10 @@ export function MapCanvas({
         // it up separately.
         out.push(
           new SimpleMeshLayer({
-            id: "terrain-3d",
+            // Unique-per-mode id forces a full layer rebuild on swap so
+            // deck.gl re-uploads the new mesh (async: true on `mesh`
+            // otherwise caches by identity).
+            id: `terrain-3d-${terrainMode}`,
             data: [{ position: [0, 0, 0] }],
             mesh: {
               attributes: {
@@ -200,7 +211,7 @@ export function MapCanvas({
       );
     }
     return out;
-  }, [is3D, heatData, highlightPoints, showHeat, hoveredTopicId, terrain]);
+  }, [is3D, heatData, highlightPoints, showHeat, hoveredTopicId, terrain, terrainMode]);
 
   // World-space centroid of the highlighted topic's points, computed once
   // per highlight change. Screen projection happens per-frame in onAfterRender
