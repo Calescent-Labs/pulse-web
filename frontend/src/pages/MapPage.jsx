@@ -6,6 +6,7 @@ import { ErrorState, EmptyState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
 import { LockedFeature } from "../components/LockedFeature";
 import { MapCanvas } from "../components/MapCanvas";
+import { SignalsPanel } from "../components/SignalsPanel";
 import { HeatBadge } from "../components/HeatBadge";
 import { useMap, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
@@ -135,6 +136,64 @@ export default function MapPage() {
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  // Viewport-driven signals panel
+  const [visibleBounds, setVisibleBounds] = useState(null);
+  const [signalsOpen, setSignalsOpen] = useState(
+    typeof window !== "undefined" ? window.innerWidth >= 900 : true,
+  );
+  const [signalsSort, setSignalsSort] = useState("count");
+  const boundsTimer = useRef(null);
+  const onBoundsChange = useCallback((b) => {
+    // debounce so panning at 60fps doesn't refilter the list on every frame
+    if (boundsTimer.current) clearTimeout(boundsTimer.current);
+    boundsTimer.current = setTimeout(() => setVisibleBounds(b), 180);
+  }, []);
+
+  // Compute topics visible inside the current viewport by aggregating points.
+  // Falls back to the full topic feed sorted by heat until we have a bounds
+  // reading (first render before onAfterRender fires) or when heat is off.
+  const visibleAggregate = useMemo(() => {
+    const inView = (p) =>
+      !visibleBounds ||
+      (p.x >= visibleBounds.minX &&
+        p.x <= visibleBounds.maxX &&
+        p.y >= visibleBounds.minY &&
+        p.y <= visibleBounds.maxY);
+
+    const counts = new Map();
+    let noise = 0;
+    for (const p of points) {
+      if (!inView(p)) continue;
+      if (p.topic_id == null) {
+        noise += 1;
+        continue;
+      }
+      counts.set(p.topic_id, (counts.get(p.topic_id) || 0) + 1);
+    }
+
+    const rows = [];
+    counts.forEach((count, topicId) => {
+      const t = topicsMap.get(topicId);
+      if (!t) return; // unnamed / not in top-100 feed
+      rows.push({ topic: t, countInView: count });
+    });
+
+    // If we haven't heard from the viewport yet, seed with the full topic feed
+    // ranked by heat so the panel has content immediately.
+    if (!visibleBounds && rows.length === 0) {
+      topicsMap.forEach((t) => rows.push({ topic: t, countInView: 0 }));
+    }
+
+    rows.sort((a, b) => {
+      if (signalsSort === "heat") {
+        return (b.topic.heat_percentile || 0) - (a.topic.heat_percentile || 0);
+      }
+      return b.countInView - a.countInView || (b.topic.heat_percentile || 0) - (a.topic.heat_percentile || 0);
+    });
+
+    return { rows: rows.slice(0, 30), noise };
+  }, [points, topicsMap, visibleBounds, signalsSort]);
+
   return (
     <AppShell disclaimer={disclaimer} dense>
       <div data-testid="map-page" className="relative h-[calc(100vh-104px)] w-full">
@@ -172,23 +231,24 @@ export default function MapPage() {
               topics={topicsMap}
               showHeat={showHeat}
               bounds={bounds}
+              onBoundsChange={onBoundsChange}
             />
           )}
         </div>
 
-        {/* Ambient-mode hint — reminds users the deep read lives in Trending */}
+        {/* Signals panel — right-side list of topics inside the current view.
+            Replaces the old ambient hint (redundant now that the panel makes
+            "what am I looking at" the primary right-side answer). */}
         {hasKey && !mapQuery.isError && (
-          <div
-            data-testid="ambient-hint"
-            className="pointer-events-none absolute bottom-24 right-3 z-10 max-w-[220px] rounded-sm border hairline bg-background/70 px-2.5 py-1.5 text-right backdrop-blur"
-          >
-            <div className="mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              ambient · signal density
-            </div>
-            <div className="mt-0.5 mono text-[10px] text-neutral-500">
-              For content-level detail, open a topic from Trending.
-            </div>
-          </div>
+          <SignalsPanel
+            visibleTopics={visibleAggregate.rows}
+            visibleNoiseCount={visibleAggregate.noise}
+            sort={signalsSort}
+            onSortChange={setSignalsSort}
+            open={signalsOpen}
+            onToggle={() => setSignalsOpen((o) => !o)}
+            loading={mapQuery.isLoading || topicsQuery.isLoading}
+          />
         )}
 
         {/* Focus banner — 24h velocity sparkline of the focused topic */}
@@ -251,7 +311,13 @@ export default function MapPage() {
         )}
 
         {/* Top controls */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start gap-2 p-3">
+        <div
+          className={`pointer-events-none absolute top-0 z-10 flex flex-wrap items-start gap-2 p-3 transition-[right] duration-200 ${
+            hasKey && !mapQuery.isError && signalsOpen
+              ? "left-0 right-[340px]"
+              : "inset-x-0"
+          }`}
+        >
           <div className="pointer-events-auto flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
             {WINDOWS.map((w) => {
               const locked = tier === "free" && !FREE_WINDOWS.has(w);
@@ -400,7 +466,13 @@ export default function MapPage() {
         </div>
 
         {/* Scrubber */}
-        <div className="pointer-events-auto absolute inset-x-3 bottom-3 z-10 rounded-sm border hairline bg-background/90 p-3 backdrop-blur">
+        <div
+          className={`pointer-events-auto absolute bottom-3 z-10 rounded-sm border hairline bg-background/90 p-3 backdrop-blur transition-[right] duration-200 ${
+            hasKey && !mapQuery.isError && signalsOpen
+              ? "left-3 right-[352px]"
+              : "inset-x-3"
+          }`}
+        >
           {tier === "pro" ? (
             <>
               <div className="mb-2 flex items-center justify-between mono text-[11px] uppercase tracking-widest text-muted-foreground">

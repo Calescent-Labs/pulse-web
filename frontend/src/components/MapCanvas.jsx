@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import DeckGL from "@deck.gl/react";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import { OrthographicView } from "@deck.gl/core";
@@ -12,18 +12,16 @@ import { HEATMAP_COLOR_RANGE } from "../lib/heat";
  * per-point is drawn — this is a rendering decision, not an API one.
  *
  * The coordinate space is FIXED per server process (see DATA_CONTRACT.md).
- * OrthographicView pins to the point cloud's bounding box so pan/zoom moves
- * *through* the same map, never rebasing it between windows.
  *
  * Props:
- *   points: MapPoint[]                — used only as heatmap weight source
- *   topics: Map<number, Topic>        — used for per-point velocity weighting
- *   showHeat: boolean                 — quick off-toggle for the heat layer
- *   bounds: { minX, maxX, minY, maxY } | null
+ *   points, topics, showHeat, bounds — as before
+ *   onBoundsChange({minX, maxX, minY, maxY}) — fires (debounced by parent)
+ *     whenever the visible extent changes, so a companion panel can list the
+ *     topics inside the current view.
  */
 const OVIEW = new OrthographicView({ id: "ortho", controller: true });
 
-export function MapCanvas({ points, topics, showHeat, bounds }) {
+export function MapCanvas({ points, topics, showHeat, bounds, onBoundsChange }) {
   const initialViewState = useMemo(() => {
     if (!bounds) return { target: [0, 0, 0], zoom: 5 };
     const cx = (bounds.minX + bounds.maxX) / 2;
@@ -35,9 +33,6 @@ export function MapCanvas({ points, topics, showHeat, bounds }) {
     if (!showHeat || !points || !points.length) return [];
     return points.map((p) => {
       const t = p.topic_id != null && topics ? topics.get(p.topic_id) : null;
-      // Positive velocity = accelerating attention. Give unclustered noise a
-      // tiny baseline so quiet regions don't render as dead black holes but
-      // clearly under-index against hot ones.
       const v = t ? Math.max(0, t.signals?.velocity || 0) : 0.005;
       return { position: [p.x, p.y], weight: v + 0.005 };
     });
@@ -46,7 +41,6 @@ export function MapCanvas({ points, topics, showHeat, bounds }) {
   const layers = useMemo(() => {
     if (!showHeat || !heatData.length) return [];
     return [
-      // Broad ambient layer — softer, wider, sets the atmosphere
       new HeatmapLayer({
         id: "heat-atmosphere",
         data: heatData,
@@ -60,7 +54,6 @@ export function MapCanvas({ points, topics, showHeat, bounds }) {
         opacity: 0.55,
         pickable: false,
       }),
-      // Focused layer — smaller radius, higher contrast, defines the hot spots
       new HeatmapLayer({
         id: "heat-focus",
         data: heatData,
@@ -77,6 +70,28 @@ export function MapCanvas({ points, topics, showHeat, bounds }) {
     ];
   }, [heatData, showHeat]);
 
+  // Report the actual rendered viewport bounds to the parent. We use
+  // onAfterRender because it gives us the resolved viewport instance
+  // (including any user pan/zoom), not just the raw viewState. Debounce
+  // handled by the parent so we don't refilter the panel on every frame.
+  const lastReportedRef = useRef("");
+  const reportBounds = useCallback(
+    ({ viewports }) => {
+      if (!onBoundsChange) return;
+      const vp = viewports && viewports[0];
+      if (!vp) return;
+      const [minX, maxY] = vp.unproject([0, 0]);
+      const [maxX, minY] = vp.unproject([vp.width, vp.height]);
+      // Cheap change-detection so we don't fire onAfterRender-driven updates
+      // when nothing meaningful moved (still frames, tooltip repaints, etc.)
+      const key = `${minX.toFixed(3)}|${maxX.toFixed(3)}|${minY.toFixed(3)}|${maxY.toFixed(3)}`;
+      if (key === lastReportedRef.current) return;
+      lastReportedRef.current = key;
+      onBoundsChange({ minX, maxX, minY, maxY });
+    },
+    [onBoundsChange],
+  );
+
   return (
     <DeckGL
       data-testid="map-canvas"
@@ -86,6 +101,7 @@ export function MapCanvas({ points, topics, showHeat, bounds }) {
       layers={layers}
       style={{ position: "absolute", inset: 0, background: "#0a0d13" }}
       getCursor={({ isDragging }) => (isDragging ? "grabbing" : "grab")}
+      onAfterRender={reportBounds}
     />
   );
 }
