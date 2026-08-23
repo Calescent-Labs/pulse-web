@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Lock, Search, Sparkles, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { HeatBadge } from "../components/HeatBadge";
 import { SentimentIndicator } from "../components/SentimentIndicator";
@@ -132,26 +132,54 @@ function SectorFilter({ value, onChange }) {
   );
 }
 
-function TopicRow({ topic, rank }) {
+function TopicRow({ topic, rank, locked }) {
   const isDivided =
     topic.sentiment &&
     topic.sentiment.mean != null &&
     Math.abs(topic.sentiment.mean) < 0.15 &&
     (topic.sentiment.polarisation ?? 0) > 0.35;
+
+  const blurStyle = locked
+    ? { filter: "blur(5px) grayscale(0.35)", opacity: 0.75 }
+    : undefined;
+
+  const RowLink = ({ children, className }) =>
+    locked ? (
+      <div className={className} aria-hidden="true">
+        {children}
+      </div>
+    ) : (
+      <Link
+        to={`/topic/${topic.topic_id}`}
+        data-testid={`topic-link-${topic.topic_id}`}
+        className={className}
+      >
+        {children}
+      </Link>
+    );
+
   return (
     <li
       data-testid={`topic-row-${topic.topic_id}`}
-      className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-b hairline px-3 py-3 hover:bg-secondary/30 sm:grid-cols-[36px_1fr_150px_180px_120px] sm:gap-4"
+      data-locked={locked ? "true" : "false"}
+      className={`grid grid-cols-[36px_1fr_auto] items-center gap-3 border-b hairline px-3 py-3 sm:grid-cols-[36px_1fr_150px_180px_120px] sm:gap-4 ${
+        locked ? "bg-secondary/10" : "hover:bg-secondary/30"
+      }`}
     >
-      <div className="mono text-xs text-muted-foreground text-right">#{rank}</div>
-      <div className="min-w-0">
-        <Link
-          to={`/topic/${topic.topic_id}`}
-          data-testid={`topic-link-${topic.topic_id}`}
-          className="block truncate text-sm font-medium text-neutral-50 no-underline hover:text-white"
-        >
+      <div className="mono text-xs text-muted-foreground text-right">
+        {locked ? (
+          <span className="inline-flex items-center gap-1">
+            #{rank}
+            <Lock className="h-2.5 w-2.5" />
+          </span>
+        ) : (
+          <>#{rank}</>
+        )}
+      </div>
+      <div className="min-w-0" style={blurStyle}>
+        <RowLink className="block truncate text-sm font-medium text-neutral-50 no-underline hover:text-white">
           {safeName(topic)}
-        </Link>
+        </RowLink>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
           <StatusChip status={topic.status} />
           {topic.sector && (
@@ -168,24 +196,24 @@ function TopicRow({ topic, rank }) {
           )}
         </div>
       </div>
-      <div className="hidden sm:block">
+      <div className="hidden sm:block" style={blurStyle}>
         <HeatBadge percentile={topic.heat_percentile} confidence={topic.heat_confidence} />
       </div>
-      <div className="hidden sm:block">
+      <div className="hidden sm:block" style={blurStyle}>
         <SentimentIndicator
           mean={topic.sentiment?.mean}
           polarisation={topic.sentiment?.polarisation}
           sampleSize={topic.sentiment?.sample_size}
         />
       </div>
-      <div className="hidden sm:block">
+      <div className="hidden sm:block" style={blurStyle}>
         <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground">velocity</div>
         <div className="mono text-xs text-neutral-100">
           {topic.signals?.velocity != null ? topic.signals.velocity.toFixed(4) : "—"}
         </div>
       </div>
       {/* Mobile summary */}
-      <div className="col-span-3 flex items-center gap-3 sm:hidden">
+      <div className="col-span-3 flex items-center gap-3 sm:hidden" style={blurStyle}>
         <HeatBadge
           percentile={topic.heat_percentile}
           confidence={topic.heat_confidence}
@@ -274,6 +302,8 @@ export default function TrendingPage() {
   const pagination = meta?.pagination;
   const disclaimer = meta?.disclaimer;
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
+  const FREE_VISIBLE = 3;
+  const lockedCount = !isPro && topics.length > FREE_VISIBLE ? topics.length - FREE_VISIBLE : 0;
 
   const emptyCopy = useMemo(() => {
     if (sentiment) {
@@ -482,9 +512,36 @@ export default function TrendingPage() {
           ) : (
             <ol data-testid="topics-list">
               {topics.map((t, i) => (
-                <TopicRow key={t.topic_id} topic={t} rank={page * PAGE_SIZE + i + 1} />
+                <TopicRow
+                  key={t.topic_id}
+                  topic={t}
+                  rank={page * PAGE_SIZE + i + 1}
+                  locked={!isPro && i >= FREE_VISIBLE}
+                />
               ))}
             </ol>
+          )}
+
+          {/* Free-tier caveat — visible under the list when there are locked rows */}
+          {!isPro && lockedCount > 0 && !request.isError && (
+            <div
+              data-testid="trending-pro-caveat"
+              className="border-t hairline bg-secondary/40 px-3 py-2.5"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-3 w-3 text-[hsl(25,95%,60%)]" />
+                <span className="mono text-[10px] uppercase tracking-[0.18em] text-neutral-100">
+                  {lockedCount} more topic{lockedCount === 1 ? "" : "s"} on this page
+                </span>
+                <span className="mono text-[10px] text-neutral-500">·</span>
+                <span className="mono text-[10px] uppercase tracking-widest text-[hsl(25,95%,60%)]">
+                  coming with Pro
+                </span>
+              </div>
+              <div className="mt-1 mono text-[10px] text-muted-foreground normal-case tracking-normal">
+                Free shows the top {FREE_VISIBLE}. Full ranked feed and depth per topic arrives with sign-up.
+              </div>
+            </div>
           )}
 
           {/* Pagination footer */}
