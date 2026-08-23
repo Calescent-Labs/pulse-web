@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Download, Filter, Link2, Lock, Pause, Play, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ErrorState, EmptyState } from "../components/ErrorState";
@@ -7,12 +7,10 @@ import { NoKeyState } from "../components/NoKeyState";
 import { LockedFeature } from "../components/LockedFeature";
 import { MapCanvas } from "../components/MapCanvas";
 import { HeatBadge } from "../components/HeatBadge";
-import { StatusChip } from "../components/StatusChip";
 import { useMap, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
-import { formatCompact, formatHoursAgo, safeName } from "../lib/format";
+import { formatHoursAgo, safeName } from "../lib/format";
 import { Sparkline } from "../components/Sparkline";
-import { HeatBadge as _HeatBadge } from "../components/HeatBadge";
 import { downloadTopicOg } from "../lib/ogCanvas";
 
 const WINDOWS = ["24h", "72h", "7d", "30d"];
@@ -30,8 +28,7 @@ function useDebounced(value, delay) {
 
 /**
  * Session-scoped bounds. UMAP is refit on server restart, so remember the
- * first non-empty bounds we see, and invalidate whenever the query errors
- * or we switch back from an empty result (which may indicate a gap).
+ * first non-empty bounds we see, and invalidate whenever window/mode changes.
  */
 function useFixedBounds(points, resetToken) {
   const ref = useRef(null);
@@ -62,7 +59,6 @@ export default function MapPage() {
 
   const win = params.get("window") || "24h";
   const asof = params.get("asof") || "";
-  const colorBy = params.get("color") === "velocity" ? "velocity" : "age";
   const showHeat = params.get("heat") !== "0";
   const mode = params.get("mode") === "moment" ? "moment" : "cumulative";
   const percentile = PERCENTILES.includes(params.get("percentile")) ? params.get("percentile") : "25";
@@ -112,6 +108,7 @@ export default function MapPage() {
     percentile: mode === "moment" ? percentile : undefined,
     topic_id: focusTopicId,
   });
+  // Topics feed used only for weighting the heat by velocity — no rendering.
   const topicsQuery = useTopics({ limit: 100 });
   const topicsMap = useMemo(() => {
     const m = new Map();
@@ -121,37 +118,13 @@ export default function MapPage() {
 
   const points = mapQuery.data?.data?.points || [];
   const noteMsg = mapQuery.data?.data?.note;
-  // Bounds reset when mode/window changes, since Moment mode's sparse sample
-  // may not cover the same extent; keep the fixed geography contract.
   const bounds = useFixedBounds(points, focusTopicId ? "focus" : `${mode}:${win}`);
   const disclaimer = mapQuery.data?.meta?.disclaimer;
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
   const returnedMode = mapQuery.data?.data?.mode || mapQuery.data?.meta?.mode || mode;
-
-  const [hover, setHover] = useState(null);
-  const [openTopic, setOpenTopic] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-
-  const onHoverPoint = useCallback((obj, x, y) => {
-    if (!obj) return setHover(null);
-    setHover({ point: obj, x, y });
-  }, []);
-
-  const onClickPoint = useCallback(
-    (obj) => {
-      if (!obj) return;
-      const t = obj.topic_id != null ? topicsMap.get(obj.topic_id) : null;
-      setOpenTopic({ point: obj, topic: t });
-    },
-    [topicsMap],
-  );
-
   const asOfStamp = mapQuery.data?.meta?.as_of || mapQuery.data?.meta?.generated_at;
 
   const focusTopic = focusTopicId != null ? topicsMap.get(focusTopicId) : null;
-  // Fetch 24h history for the focused topic so the banner can answer
-  // "is this one rising?" without leaving the map.
   const focusHistoryQ = useTopic({
     topicId: focusTopicId,
     history_hours: 24,
@@ -159,10 +132,13 @@ export default function MapPage() {
   });
   const focusHistory = focusHistoryQ.data?.data?.history || [];
 
+  const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
   return (
     <AppShell disclaimer={disclaimer} dense>
       <div data-testid="map-page" className="relative h-[calc(100vh-104px)] w-full">
-        {/* Canvas layer */}
+        {/* Canvas — heat only, no individual signal dots */}
         <div className="absolute inset-0">
           {!hasKey ? (
             <div className="p-4"><NoKeyState /></div>
@@ -172,7 +148,7 @@ export default function MapPage() {
             </div>
           ) : mapQuery.isLoading ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-              <div className="mono text-xs text-muted-foreground">loading semantic map…</div>
+              <div className="mono text-xs text-muted-foreground">loading semantic heat…</div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-600 max-w-xs">
                 staging is tunnelled — first fetch can take up to 2 minutes.
               </div>
@@ -194,17 +170,28 @@ export default function MapPage() {
             <MapCanvas
               points={points}
               topics={topicsMap}
-              colorBy={colorBy}
               showHeat={showHeat}
               bounds={bounds}
-              onHoverPoint={onHoverPoint}
-              onClickPoint={onClickPoint}
             />
           )}
         </div>
 
-        {/* Focus banner — carries the focused topic's 24h velocity sparkline
-            so the map answers "is this one rising?" without leaving. */}
+        {/* Ambient-mode hint — reminds users the deep read lives in Trending */}
+        {hasKey && !mapQuery.isError && (
+          <div
+            data-testid="ambient-hint"
+            className="pointer-events-none absolute bottom-24 right-3 z-10 max-w-[220px] rounded-sm border hairline bg-background/70 px-2.5 py-1.5 text-right backdrop-blur"
+          >
+            <div className="mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              ambient · signal density
+            </div>
+            <div className="mt-0.5 mono text-[10px] text-neutral-500">
+              For content-level detail, open a topic from Trending.
+            </div>
+          </div>
+        )}
+
+        {/* Focus banner — 24h velocity sparkline of the focused topic */}
         {focusTopicId != null && (
           <div className="pointer-events-auto absolute left-3 top-14 z-10 flex items-center gap-3 rounded-sm border hairline bg-background/90 px-3 py-2 backdrop-blur">
             <Filter className="h-3 w-3 text-neutral-200" />
@@ -238,7 +225,7 @@ export default function MapPage() {
                     const latest = [...focusHistory].reverse().find((h) => h.heat_percentile != null);
                     if (!latest) return null;
                     return (
-                      <_HeatBadge
+                      <HeatBadge
                         percentile={latest.heat_percentile}
                         confidence={latest.heat_confidence}
                         size="sm"
@@ -256,7 +243,7 @@ export default function MapPage() {
               data-testid="clear-focus"
               onClick={() => setParam("topic_id", "")}
               className="ml-1 rounded-sm p-0.5 text-muted-foreground hover:text-neutral-100"
-              title="Show every point again"
+              title="Show every region again"
             >
               <X className="h-3 w-3" />
             </button>
@@ -300,7 +287,7 @@ export default function MapPage() {
                   ? "bg-secondary text-neutral-50"
                   : "text-muted-foreground hover:text-neutral-100"
               }`}
-              title="Everything published in the window"
+              title="Every signal alive in the window"
             >
               cumulative
             </button>
@@ -318,7 +305,6 @@ export default function MapPage() {
             </button>
           </div>
 
-          {/* Percentile selector — only in moment mode */}
           {mode === "moment" && (
             <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
               <span className="px-2 mono text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -341,27 +327,6 @@ export default function MapPage() {
               ))}
             </div>
           )}
-
-          <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
-            <button
-              data-testid="color-age"
-              onClick={() => setParam("color", "")}
-              className={`rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
-                colorBy === "age" ? "bg-secondary text-neutral-50" : "text-muted-foreground hover:text-neutral-100"
-              }`}
-            >
-              age
-            </button>
-            <button
-              data-testid="color-velocity"
-              onClick={() => setParam("color", "velocity")}
-              className={`rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
-                colorBy === "velocity" ? "bg-secondary text-neutral-50" : "text-muted-foreground hover:text-neutral-100"
-              }`}
-            >
-              velocity
-            </button>
-          </div>
 
           <button
             data-testid="heat-toggle"
@@ -406,15 +371,15 @@ export default function MapPage() {
                 try {
                   setDownloading(true);
                   await downloadTopicOg(t, focusHistory);
-                } catch (e) {
-                  // best-effort; silent
+                } catch {
+                  /* silent */
                 } finally {
                   setDownloading(false);
                 }
               }}
               disabled={focusHistoryQ.isLoading || focusHistory.length < 2}
               className="pointer-events-auto inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-muted-foreground transition-colors hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
-              title="Download a 1200×630 preview PNG of this topic's 24h arc — attach it manually to a post today"
+              title="Download a 1200×630 preview PNG of this topic's 24h arc"
             >
               <Download className="h-3 w-3" />
               {downloading ? "rendering…" : "preview png"}
@@ -422,17 +387,12 @@ export default function MapPage() {
           )}
 
           <div className="pointer-events-auto ml-auto rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            <span className="text-neutral-200">{points.length.toLocaleString()}</span> shown
+            <span className="text-neutral-200">{points.length.toLocaleString()}</span> signals
             {mapQuery.data?.data?.reference_size ? (
               <span className="ml-2 text-neutral-500">
                 / {mapQuery.data.data.reference_size.toLocaleString()} in scope
               </span>
             ) : null}
-            {mapQuery.data?.data?.duplicates_collapsed > 0 && (
-              <span className="ml-2 text-neutral-500">
-                · {mapQuery.data.data.duplicates_collapsed} re-uploads hidden
-              </span>
-            )}
             {returnedMode === "moment" && (
               <span className="ml-2 heat-2">moment</span>
             )}
@@ -497,114 +457,6 @@ export default function MapPage() {
             <LockedFeature feature="time travel" />
           )}
         </div>
-
-        {/* Hover card */}
-        {hover && (
-          <div
-            data-testid="map-hover"
-            className="pointer-events-none absolute z-20 max-w-xs rounded-sm border hairline bg-background/95 p-2.5 shadow-lg backdrop-blur"
-            style={{
-              left: Math.min(hover.x + 12, (typeof window !== "undefined" ? window.innerWidth : 1000) - 320),
-              top: Math.min(hover.y + 12, (typeof window !== "undefined" ? window.innerHeight : 800) - 160),
-            }}
-          >
-            <div className="text-xs font-medium text-neutral-100 line-clamp-2">
-              {hover.point.title}
-            </div>
-            <div className="mt-1 mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              {hover.point.channel} · {hover.point.platform}
-            </div>
-            <div className="mt-1 flex items-center gap-3 mono text-[10px] text-neutral-300">
-              <span>{formatCompact(hover.point.views)} views</span>
-              <span className="text-neutral-600">·</span>
-              <span>{formatHoursAgo(hover.point.age_hours)} old</span>
-            </div>
-          </div>
-        )}
-
-        {/* Side panel */}
-        {openTopic && (
-          <aside
-            data-testid="map-side-panel"
-            className="absolute right-0 top-0 z-30 flex h-full w-full max-w-md flex-col border-l hairline bg-background/95 backdrop-blur"
-          >
-            <div className="flex items-start justify-between border-b hairline p-4">
-              <div className="min-w-0">
-                <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Content on the map
-                </div>
-                <div className="mt-1 text-sm text-neutral-100 line-clamp-3">
-                  {openTopic.point.title}
-                </div>
-                <div className="mt-1 mono text-[10px] text-muted-foreground">
-                  {openTopic.point.channel} · {formatHoursAgo(openTopic.point.age_hours)} · {formatCompact(openTopic.point.views)} views
-                </div>
-              </div>
-              <button
-                data-testid="side-panel-close"
-                onClick={() => setOpenTopic(null)}
-                className="mono text-[11px] uppercase tracking-widest text-muted-foreground hover:text-neutral-100"
-              >
-                close
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              {openTopic.topic ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <StatusChip status={openTopic.topic.status} />
-                    {openTopic.topic.sector && (
-                      <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                        {openTopic.topic.sector}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="mt-2 text-lg font-semibold tracking-tight text-neutral-50">
-                    {safeName(openTopic.topic)}
-                  </h2>
-                  <div className="mt-2">
-                    <HeatBadge
-                      percentile={openTopic.topic.heat_percentile}
-                      confidence={openTopic.topic.heat_confidence}
-                      size="lg"
-                    />
-                  </div>
-                  {openTopic.topic.summary && (
-                    <p className="mt-3 text-sm leading-relaxed text-neutral-300">
-                      {openTopic.topic.summary}
-                    </p>
-                  )}
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Link
-                      to={`/topic/${openTopic.topic.topic_id}`}
-                      data-testid="open-topic-detail"
-                      className="inline-flex items-center gap-1 rounded-sm border hairline bg-secondary/60 px-3 py-1.5 text-xs text-neutral-100 hover:bg-secondary"
-                    >
-                      Open topic detail →
-                    </Link>
-                    <button
-                      data-testid="focus-on-topic"
-                      onClick={() => {
-                        setParam("topic_id", String(openTopic.topic.topic_id));
-                        setOpenTopic(null);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-sm border hairline bg-background px-3 py-1.5 text-xs text-neutral-200 hover:bg-secondary"
-                      title="Show only this topic's points on the map"
-                    >
-                      <Filter className="h-3 w-3" />
-                      Focus on map
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs text-muted-foreground">
-                  This point isn&apos;t clustered into a topic yet. Unclustered content
-                  {" "}&ldquo;noise&rdquo; is normal and usually the majority.
-                </div>
-              )}
-            </div>
-          </aside>
-        )}
       </div>
     </AppShell>
   );

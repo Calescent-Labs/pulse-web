@@ -1,39 +1,29 @@
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import DeckGL from "@deck.gl/react";
-import { ScatterplotLayer } from "@deck.gl/layers";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import { OrthographicView } from "@deck.gl/core";
-import { HEATMAP_COLOR_RANGE, ageColor, velocityColor } from "../lib/heat";
+import { HEATMAP_COLOR_RANGE } from "../lib/heat";
 
 /**
- * MapCanvas — deck.gl-backed semantic map.
- * The coordinate space is FIXED (see DATA_CONTRACT.md). We use an
- * OrthographicView pinned to the point cloud's bounding box so pan/zoom
- * moves *through* the same map, never rebasing it between windows.
+ * MapCanvas — deck.gl-backed semantic heat map.
+ *
+ * We render heat regions only, no individual signal dots. The point payload
+ * still comes from /v1/map (weighted by parent topic velocity) but nothing
+ * per-point is drawn — this is a rendering decision, not an API one.
+ *
+ * The coordinate space is FIXED per server process (see DATA_CONTRACT.md).
+ * OrthographicView pins to the point cloud's bounding box so pan/zoom moves
+ * *through* the same map, never rebasing it between windows.
  *
  * Props:
- *   points: MapPoint[]
- *   topics: Map<number, Topic>   (optional — used to colour by velocity)
- *   colorBy: 'age' | 'velocity'
- *   showHeat: boolean
- *   bounds: { minX, maxX, minY, maxY } | null  — pinned across time
- *   onHoverPoint: (point|null, x, y) => void
- *   onClickPoint: (point) => void
+ *   points: MapPoint[]                — used only as heatmap weight source
+ *   topics: Map<number, Topic>        — used for per-point velocity weighting
+ *   showHeat: boolean                 — quick off-toggle for the heat layer
+ *   bounds: { minX, maxX, minY, maxY } | null
  */
 const OVIEW = new OrthographicView({ id: "ortho", controller: true });
 
-export function MapCanvas({
-  points,
-  topics,
-  colorBy,
-  showHeat,
-  bounds,
-  onHoverPoint,
-  onClickPoint,
-}) {
-  const hoverRef = useRef(null);
-
-  // Initial view: centre on the fixed bounds, scaled to fill.
+export function MapCanvas({ points, topics, showHeat, bounds }) {
   const initialViewState = useMemo(() => {
     if (!bounds) return { target: [0, 0, 0], zoom: 5 };
     const cx = (bounds.minX + bounds.maxX) / 2;
@@ -42,63 +32,50 @@ export function MapCanvas({
   }, [bounds]);
 
   const heatData = useMemo(() => {
-    if (!showHeat || !points || !topics) return [];
+    if (!showHeat || !points || !points.length) return [];
     return points.map((p) => {
-      const t = p.topic_id != null ? topics.get(p.topic_id) : null;
-      const weight = t ? Math.max(0, t.signals?.velocity || 0) : 0.02;
-      return { position: [p.x, p.y], weight };
+      const t = p.topic_id != null && topics ? topics.get(p.topic_id) : null;
+      // Positive velocity = accelerating attention. Give unclustered noise a
+      // tiny baseline so quiet regions don't render as dead black holes but
+      // clearly under-index against hot ones.
+      const v = t ? Math.max(0, t.signals?.velocity || 0) : 0.005;
+      return { position: [p.x, p.y], weight: v + 0.005 };
     });
   }, [points, topics, showHeat]);
 
-  const getColor = useCallback(
-    (p) => {
-      if (colorBy === "velocity") {
-        const t = p.topic_id != null && topics ? topics.get(p.topic_id) : null;
-        return velocityColor(t ? t.signals?.velocity || 0 : 0);
-      }
-      return ageColor(p.age_hours);
-    },
-    [colorBy, topics],
-  );
-
   const layers = useMemo(() => {
-    const out = [];
-    if (showHeat && heatData.length) {
-      out.push(
-        new HeatmapLayer({
-          id: "heat",
-          data: heatData,
-          getPosition: (d) => d.position,
-          getWeight: (d) => d.weight,
-          radiusPixels: 60,
-          intensity: 1.4,
-          threshold: 0.05,
-          colorRange: HEATMAP_COLOR_RANGE,
-          aggregation: "SUM",
-          pickable: false,
-        }),
-      );
-    }
-    if (points && points.length) {
-      out.push(
-        new ScatterplotLayer({
-          id: "points",
-          data: points,
-          getPosition: (d) => [d.x, d.y, 0],
-          getFillColor: getColor,
-          getRadius: (d) => 1.6 + Math.log10(Math.max(1, d.views || 1)) * 0.6,
-          radiusUnits: "pixels",
-          radiusMinPixels: 1.4,
-          radiusMaxPixels: 8,
-          stroked: false,
-          pickable: true,
-          opacity: 0.9,
-          updateTriggers: { getFillColor: [colorBy, topics] },
-        }),
-      );
-    }
-    return out;
-  }, [points, heatData, getColor, colorBy, topics, showHeat]);
+    if (!showHeat || !heatData.length) return [];
+    return [
+      // Broad ambient layer — softer, wider, sets the atmosphere
+      new HeatmapLayer({
+        id: "heat-atmosphere",
+        data: heatData,
+        getPosition: (d) => d.position,
+        getWeight: (d) => d.weight,
+        radiusPixels: 140,
+        intensity: 1.1,
+        threshold: 0.02,
+        colorRange: HEATMAP_COLOR_RANGE,
+        aggregation: "SUM",
+        opacity: 0.55,
+        pickable: false,
+      }),
+      // Focused layer — smaller radius, higher contrast, defines the hot spots
+      new HeatmapLayer({
+        id: "heat-focus",
+        data: heatData,
+        getPosition: (d) => d.position,
+        getWeight: (d) => d.weight,
+        radiusPixels: 70,
+        intensity: 1.8,
+        threshold: 0.06,
+        colorRange: HEATMAP_COLOR_RANGE,
+        aggregation: "SUM",
+        opacity: 0.9,
+        pickable: false,
+      }),
+    ];
+  }, [heatData, showHeat]);
 
   return (
     <DeckGL
@@ -108,14 +85,7 @@ export function MapCanvas({
       controller={{ dragRotate: false, minZoom: 3, maxZoom: 12 }}
       layers={layers}
       style={{ position: "absolute", inset: 0, background: "#0a0d13" }}
-      onHover={({ object, x, y }) => {
-        hoverRef.current = object || null;
-        onHoverPoint && onHoverPoint(object || null, x, y);
-      }}
-      onClick={({ object }) => {
-        if (object && onClickPoint) onClickPoint(object);
-      }}
-      getCursor={({ isDragging }) => (isDragging ? "grabbing" : hoverRef.current ? "pointer" : "grab")}
+      getCursor={({ isDragging }) => (isDragging ? "grabbing" : "grab")}
     />
   );
 }
