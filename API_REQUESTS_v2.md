@@ -1,31 +1,30 @@
-# Pulse API — Frontend requests for v1.2
+# Pulse API — Frontend requests for v1.2 (revised)
 
-_From the Pulse web app team, 2026-02._
+_From the Pulse web app team, 2026-02. Revised after backend review._
 
 Frontend is moving from a semantic map with a ranked feed to an **ambient signal instrument with a marketing-shaped landing page**. Three product surfaces gain something:
 
 - **`/` (new landing)** — a 7-day heat timelapse loop using real data, autoplay, ambient.
-- **`/map` (was `/`)** — the instrument. Individual signal dots removed; we render heat regions only. Both **2D (default)** and **3D (opt-in)** using the same aggregated payload.
-- **Cluster investigation (new)** — click any hot region → LLM-generated read of what the cluster is about. **Pro** users additionally see the top topics inside that region, linked to Topic Detail.
+- **`/map` (was `/`)** — the instrument. Individual signal dots are **hidden by default at low zoom and revealed on zoom-in** — a rendering decision on our side. The API keeps returning points. This preserves the "instrument, not a mood piece" contract.
+- **Region investigation (new)** — click any hot region → panel showing the top topics inside it (name, sector, heat, confidence, member count) plus a statistically-computed **coherence** score. **No LLM in v1.2** — this becomes a Pro feature later when there's revenue to fund it. The topics themselves are already labelled and more informative than any paraphrase.
 
-Everything below stays inside the "read-only, derived intelligence only" rule. No raw content, no comments, no embeddings, no write endpoints.
+Everything below stays inside the "read-only, derived intelligence only" rule.
 
-Four asks, ordered by criticality. Priorities on the current backlog:
+Three asks after the merge. Priorities:
 - **P0 (blocking)**: request 1, request 2
-- **P0 (blocking) for the AI cluster read only**: request 4
-- **P1 (nice-to-have — may become free if request 2 carries `topic_ids`)**: request 3
+- **P1**: request 3 (merged, was requests 3+4)
+
+Plus one platform-level ask that isn't an endpoint — **per-IP rate limiting** — flagged in its own section at the bottom.
 
 ---
 
 ## 1. `GET /v1/map/timelapse` — landing-page animation _(P0, blocking)_
 
-**Surface:** `/` (landing). An autoplay 7-day loop that visualises how attention has moved this week. Real data, not marketing filler.
+**Surface:** `/` (landing). Autoplay 7-day loop visualising how attention has moved this week. Real data, not marketing filler.
 
-**Priority:** P0 — the landing page is blocked without it. It is the entire visual.
+**Why v1 can't serve it:** Naïvely, 168 sequential `/v1/map?asof=…` calls — requires Pro (asof is Pro-gated), blows the 60/min rate limit, and returns ~63 MB of point payloads for one visualisation. Precomputed grids give the same visual at ~40 KB, Free tier, one HTTP call.
 
-**Why v1 can't serve it:**
-- Naïve approach: 168 sequential `GET /v1/map?asof=…` calls. Requires Pro (asof is Pro-gated), blows the 60/min rate limit, and returns ~63 MB of point payloads for a single frame render. Landing pages need to be fast for anonymous visitors on cold caches.
-- Precomputed grids give us the same visual at ~40 KB total, Free tier, one HTTP call.
+**Implementation hint from the backend review:** coordinates don't change between frames (UMAP is fixed within a process); only which events exist and how fast they're moving. So the projection can be computed once and per-frame binning is cheap. 15-minute cache is fine.
 
 **Proposal:**
 ```
@@ -53,39 +52,35 @@ Defaults: `days=7`, `resolution=hourly`, `grid=40`. Cap `days` at 30, `grid` at 
 }
 ```
 
-- `cells[y][x]` is a normalised (0..1) heat density for that grid cell at that frame's `asof`.
-- Payload budget: ~40 KB gzipped for 7 days × hourly × 40×40 float16 grids. Aggressive server-side rounding to 2 decimals is fine.
-- Server can cache this endpoint for 15+ minutes — landing page traffic will hammer it.
+- `cells[y][x]` is a normalised (0..1) heat density.
+- Payload budget: ~40 KB gzipped at 7 days × hourly × 40×40 float16. Two-decimal server-side rounding is fine.
+- 15-minute server cache assumed.
 
-**Tier:** Free. This is the ambient front door.
-
-**Frontend rendering plan:**
-- We iterate `frames` at ~4 fps into a `<canvas>` via a scalar-field colouriser (same heat ramp as the Map).
-- No individual points, no interaction — pure ambient.
-- Small "as of {latest asof}" overlay for honesty. Disclaimer honoured in the persistent footer as today.
+**Tier:** Free.
 
 ---
 
-## 2. `GET /v1/map` — aggregated response mode _(P0, blocking)_
+## 2. `GET /v1/map` — aggregated response mode, points preserved _(P0, blocking)_
 
-**Surface:** `/map` (the instrument). We are removing the per-point scatter and rendering hex/heat aggregates only. This means we should also stop shipping thousands of points to the client per fetch.
+**Surface:** `/map`. We render **heat aggregates by default and points on zoom-in**. Both come from the same fetch — this is a rendering decision on our side, not an API one. Points stay in the payload; `points=false` is a client opt-out for cases where we know we won't render them (like the landing page fallback).
 
-**Why v1 can't serve it:** Today the endpoint always returns `points[]`. To render heat well we need aggregated cells; sending both is wasteful.
+**Why v1 can't serve it:** Today the endpoint only returns `points[]`. To render heat well we also need aggregated cells.
 
-**Proposal:** additive query params — existing behaviour unchanged when clients don't opt in.
+**Proposal:** additive query params, existing behaviour unchanged when clients don't opt in.
 
 ```
-GET /v1/map?window=24h&asof=&aggregated=hex|grid&resolution=40&points=false
+GET /v1/map?window=24h&asof=&aggregated=hex|grid&resolution=40&points=true|false
 ```
 
-- `aggregated` (optional, default absent — v1 behaviour). When set, response includes `cells[]` in place of (or in addition to) `points[]`, per `points=` toggle.
+- `aggregated` (optional, default absent — v1 behaviour). When set, response gains `cells[]` **in addition to** `points[]`.
+- `points` (optional, default `true`). Explicit opt-out; when `false`, `points[]` is empty/omitted.
 - `resolution` (optional, default `40`). Cell count per side for `grid`; approximate hex bin size for `hex`.
-- `points` (optional, default `true` for backward compatibility). When `false`, `points[]` is empty/omitted.
 
-**Response when `aggregated=hex`:**
+**Response when `aggregated=hex` (with points kept):**
 ```json
 {
   "data": {
+    "points": [ /* unchanged v1 shape, kept in default response */ ],
     "cells": [
       {
         "x": 4.10, "y": -2.30,
@@ -104,85 +99,53 @@ GET /v1/map?window=24h&asof=&aggregated=hex|grid&resolution=40&points=false
 }
 ```
 
-- `topic_ids` is **the crucial optional field**. If you can include it (top-K by count within the cell, K ≤ 5), request #3 becomes unnecessary — the client can jump straight to Topic Detail without another round-trip. If it's expensive to compute, omit it and we'll use request #3.
-- `mean_velocity` and `mean_heat_percentile` let us colour by either dimension in 2D and extrude by either in 3D (see rendering notes below).
-- `bounds` returned here supersedes the client's cached bounds if it differs — v1 says UMAP re-fits on process restart; we'll invalidate on bounds mismatch.
+- `topic_ids` per cell is **the crucial optional field**. Backend confirmed it's practical to include (top-K by count within cell, K ≤ 5). With this, the client can jump straight from a hex click to topic details without a second round-trip — which is what collapses old request 3 into request 3 below.
+- `mean_velocity` and `mean_heat_percentile` let us colour by either dimension in 2D and extrude by either in 3D.
+- `bounds` returned here supersedes any client cache if it differs.
 
-**Tier gating:** unchanged. `aggregated` works on both tiers with existing window/asof rules.
+**Tier gating:** unchanged. `aggregated` works on both tiers under existing window/asof rules.
 
 **Frontend rendering plan:**
-- **2D (default)**: HeatmapLayer sourced from `cells[]` weights, radius derived from `cell_size`. Removes scatter entirely.
-- **3D (opt-in)**: HexagonLayer with `extruded: true`, height ← `count`, colour ← `mean_heat_percentile` (opacity dimmed by confidence, same honesty rule). Camera on `OrbitView` for pitch/rotate. Same URL param `?view=3d`; state is shareable via the existing SHARE LINK button.
-- The 3D toggle is a small chip next to Heat Field On/Off in the map toolbar. 2D is the default per your call. Same aggregated payload feeds both — no additional fetch to switch views.
+- **2D (default view)**: HeatmapLayer sourced from `cells[]`. Points fade in as the user zooms past a threshold (approximately zoom 8/12 on our OrthographicView), so the map stops being a mood piece the moment someone leans in — instrument behaviour preserved.
+- **3D (opt-in view, URL-toggleable via `?view=3d`)**: HexagonLayer extruded by `count`, coloured by `mean_heat_percentile`, opacity dimmed by inferred confidence. Camera on `OrbitView` for pitch/rotate/zoom. Same aggregated payload feeds both views; no additional fetch to switch. Both views also drive the future timelapse imagery and OG cards.
+- Existing point-click → topic side-panel behaviour is unchanged (works when zoomed in).
 
 ---
 
-## 3. `GET /v1/map/topics_at` — top topics inside a spatial region _(P1)_
+## 3. `GET /v1/map/region` — top topics + statistical coherence _(P1)_
 
-**Surface:** `/map`. Only needed if request #2's `cells[]` doesn't already carry `topic_ids`. If it does, please skip this endpoint and note it in the response to us.
+_(Collapses the previous requests 3 and 4. The LLM summary is deferred to a future Pro-only feature; v1.2 uses statistical coherence + the already-labelled topics.)_
 
-**Why v1 can't serve it:** We'd need to fetch raw points, filter client-side by (x, y, radius), and group by topic_id. That reintroduces the fat payload we're trying to eliminate in request #2.
+**Surface:** `/map`. Clicking a hex or heat spot opens a side-panel with an honest read of what's there. No LLM. No fabrication risk. Zero marginal cost.
 
-**Proposal:**
-```
-GET /v1/map/topics_at?x=4.1&y=-2.3&radius=1.0&window=24h&asof=&limit=5
-```
+**Design decision (backend proposal, accepted):** the most useful information at a hot spot is the actual **topics inside it** — already labelled with names, sectors, summaries, entities, heat, confidence, and clickable through to Topic Detail. That's more informative than any paraphrase.
 
-**Response:**
-```json
-{
-  "data": [
-    {
-      "topic_id": 134,
-      "name": "NBA 2K27 Gameplay Reviews",
-      "sector": "gaming",
-      "member_count_in_region": 12,
-      "heat_percentile": 0.99,
-      "heat_confidence": 0.72,
-      "signals": { "velocity": 0.028, "acceleration": 0.011 }
-    }
-  ],
-  "meta": { "..." : "..." }
-}
-```
+**Coherence** is a statistical honesty gate — mean cosine of member embeddings to the region centroid (the ⚑40 metric). Below a threshold, the panel says so plainly rather than pretending the region is a single story.
 
-**Tier:** Free. This is the "what topics are here" reveal; it's the entry into further investigation. Rate-limited same as `/v1/topics`.
-
----
-
-## 4. `GET /v1/map/cluster_summary` — LLM read of a hot region _(P0 for the AI cluster feature; blocking that feature only)_
-
-**Surface:** `/map`. Clicking a hex opens a side-panel with a natural-language description of "what this cluster represents", generated by an LLM over the top topics in that region. **Pro** users additionally see the topics list; **Free** users see summary + confidence only.
-
-**Why we're asking you to own this, not building it Emergent-side:** the LLM call needs the topic centroids, names, summaries, and heat data you already hold. Doing it in an Emergent-hosted proxy would either (a) require you to expose more raw data to us, or (b) recreate a second stateful application over your API — which is exactly the pattern we've been careful to avoid (same logic that killed the alerts backlog). The clean fit is: derived intelligence over your data lives next to your data.
-
-**Backend team, please decide and reply:** _which LLM provider / model do you want to use, and how should caching be handled?_ Suggestions from our end:
-- **Model recommendation**: Claude Sonnet 4.6 or Gemini 3 Flash — both are fast, cheap, and good at short structured summarisation over lists.
-- **Prompt shape**: given top 5 topics (name, summary, sector, heat_percentile, entities), return a single 1–2 sentence natural-language read + a coherence score (0..1) reflecting whether these topics genuinely cluster or are a coincidental spatial adjacency.
-- **Caching**: aggressive — key on `(bucket_asof, quantised x/y/radius, window)`. A 15-minute TTL is fine; heat updates hourly so mid-hour re-clicks should hit the cache.
-- **Cost gate**: cap regenerations per API key per hour (e.g., 30/hour Free, 200/hour Pro) so a runaway UI can't burn budget.
+**Why the API needs to serve this:** we can approximate top topics client-side from `cells[].topic_ids` in request 2, but the client doesn't have member counts *within the specific circular region the user clicked* (only within the hex cell), and definitely doesn't have coherence. Both belong on the backend where the embeddings live.
 
 **Proposal:**
 ```
-GET /v1/map/cluster_summary?x=4.1&y=-2.3&radius=1.0&window=24h&asof=&include=topics
+GET /v1/map/region?x=4.1&y=-2.3&radius=1.0&window=24h&asof=&limit=5
 ```
 
 **Response:**
 ```json
 {
   "data": {
-    "summary": "This region concentrates NBA 2K27 gameplay reviews, MyPLAYER build breakdowns, and Franchise Mode critiques — a single sports-gaming release event fanning out across creators.",
     "coherence": 0.82,
-    "generated_at": "2026-08-22T21:05:00+00:00",
-    "cache_hit": true,
+    "member_count": 47,
     "topics": [
       {
         "topic_id": 134,
         "name": "NBA 2K27 Gameplay Reviews",
         "sector": "gaming",
+        "subsector": "video game reviews",
+        "summary": "…already-labelled short summary…",
+        "member_count_in_region": 12,
         "heat_percentile": 0.99,
         "heat_confidence": 0.72,
-        "member_count_in_region": 12
+        "signals": { "velocity": 0.028, "acceleration": 0.011 }
       }
     ]
   },
@@ -190,22 +153,28 @@ GET /v1/map/cluster_summary?x=4.1&y=-2.3&radius=1.0&window=24h&asof=&include=top
 }
 ```
 
-- `coherence` is the honesty gate. **If the top topics in the region are semantically incoherent (embedding spread too high), please do NOT fabricate a story.** Return `summary: "This region isn't cohering into a single story right now."` with `coherence` below whatever threshold you pick (~0.5). Same discipline as heat_confidence — the UI treats low-coherence summaries as provisional the same way it treats low-confidence heat.
-- `cache_hit` lets us surface staleness of the read to power users.
+- `coherence` is 0..1, honestly reflecting whether these topics genuinely cluster or are a coincidental spatial adjacency. Below ~0.5 the panel dims the topics list and says "this region isn't cohering into a single story right now".
+- `member_count` is total content pieces in the region; `member_count_in_region` per topic is what shares that space, which gives an implicit rank.
 
-**Tier gating:** `include=topics` and the `topics[]` array are **Pro**. Free requesting `include=topics` returns **HTTP 402** with `detail = { "feature": "cluster investigation", "message": "..." }`, matching the existing 402 contract. Free users always get `summary`, `coherence`, `generated_at`, `cache_hit`.
+**Tier:** Free. This *is* the derived intelligence — no reason to gate the labelled data users are already paying for by using the product.
 
-**Frontend rendering plan:**
-- Click a hex → open cluster side-panel → `useClusterSummary({ x, y, radius, window, asof, include: tier === 'pro' ? 'topics' : undefined })`.
-- Coherence < 0.5 renders the summary with dimmed opacity and an explicit "this region isn't cohering" caveat.
-- Pro topics list are hoverable rows linking to `/topic/:id`, with the existing HeatBadge + closeness derivable from `member_count_in_region`.
-- 402 for Free `include=topics` renders as the standard `LockedFeature` for `"cluster investigation"`.
+**Future upgrade path (out of scope for v1.2):** when signed-up-Pro exists, add `include=llm_summary` returning a 1–2 sentence LLM narration over these same topics. Budget-cap it globally, cache hard, cost is on Pro revenue not free traffic. The existing `LockedFeature` UI state handles the 402 cleanly.
+
+---
+
+## Platform ask — per-IP rate limiting for the Free tier _(recommended)_
+
+**Why this matters to the frontend:** the landing page ships the Free key inside the browser bundle. Anonymous visitors can extract it; the current 60/min per-key limit becomes a shared bucket that ten simultaneous visitors trip into 429s. Backend has agreed to fix this as part of v1.2 rollout.
+
+**Frontend implications we should agree on:**
+- Free key is treated as a **public identifier, not a secret**. We stop pretending otherwise in code comments and docs.
+- Landing page will not use any endpoint that requires auth other than the Free identifier (met by request 1 which is Free).
+- On 429 responses the UI shows the current friendly "Rate limited, the UI will resume when the window resets" state — no change needed there.
+- If per-IP quota gets tight for legitimate use, we can add client-side coalescing on top of React Query's existing 60s staleTime.
 
 ---
 
 ## Contract stability, still depended on
-
-Nothing here breaks the invariants v1.1 established. We continue to depend on:
 
 - Fixed UMAP coordinate space per server process (session-scoped bounds caching on the client).
 - `heat_percentile` as a rank, `heat_confidence` always alongside.
@@ -220,15 +189,15 @@ Nothing here breaks the invariants v1.1 established. We continue to depend on:
 - Raw content, comment text, embeddings — still out of scope by design.
 - Write endpoints — still not asking.
 - Alerts — still deferred; belongs next to the heat engine when it ships.
-- Any per-URL dynamic OG rendering — we handle that client-side today by generating a downloadable PNG on the topic-focus flow. If a dynamic OG service ever ships on your side, the current SHARE LINK URLs are already OG-ready (`topic_id`, `window`, `asof` all live in query params).
+- **LLM cluster summary — deferred**. Statistical coherence + labelled topics is the honest answer for v1.2. Rebuilds as a Pro feature later with a hard global daily cap and cache.
 
-## Rollout order I'd suggest
+## Rollout order
 
-If your team wants to ship these in a specific order to unblock us fastest:
+1. **Request 1 (timelapse)** — landing page is fully blocked without it.
+2. **Request 2 (aggregated + points preserved)** — enables the map redesign and 3D view.
+3. **Request 3 (region investigation)** — the click-a-hex interaction becomes real. Until this lands, clicking a hex can fall back to showing whichever topics are in `cells[].topic_ids` from request 2, without coherence — degraded but functional.
+4. **Per-IP rate limiting** — should ship before the landing page goes public to any traffic beyond staging.
 
-1. **Request 1** first — landing page is fully blocked without it and there is nothing to fall back on.
-2. **Request 2** next — enables the 2D map redesign; without it, the redesign is a re-styling of the existing point payload.
-3. **Request 4** third — the AI cluster feature is the most differentiated UX, but it lives inside the map, so shipping the map first with a "click a hex to see the topics inside" fallback is graceful degradation.
-4. **Request 3** last — only if request 2 doesn't include `topic_ids`. If it does, delete this one.
-
-We'll ship the frontend in two phases matching this — Phase A (landing) can go the moment request 1 is live; Phase B (map + AI) once requests 2 and 4 are ready.
+Frontend ships in two phases matching this:
+- **Phase A (landing)** — ready to build the moment request 1 is live.
+- **Phase B (map + region investigation)** — needs requests 2 and 3. The map redesign lands on the same URL as the current map so the existing SHARE LINK state (window/asof/color/heat/topic_id/mode/percentile) carries over untouched. Adds `?view=2d|3d` and `?region=x,y,r` (or similar) to the shareable URL vocabulary.
