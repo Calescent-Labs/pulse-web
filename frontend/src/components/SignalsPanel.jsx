@@ -1,11 +1,29 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Lock, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
+import { ChevronRight, Lock, PanelRightClose, PanelRightOpen, Rows3, Rows4, Sparkles } from "lucide-react";
 import { HeatBadge } from "./HeatBadge";
 import { StatusChip } from "./StatusChip";
 import { formatCompact, safeName } from "../lib/format";
 
 const FREE_VISIBLE = 3;
+const DENSITY_KEY = "pulse:signalsDensity";
+
+function loadDensity() {
+  try {
+    if (typeof localStorage === "undefined") return "comfortable";
+    const v = localStorage.getItem(DENSITY_KEY);
+    return v === "compact" ? "compact" : "comfortable";
+  } catch {
+    return "comfortable";
+  }
+}
+function saveDensity(v) {
+  try {
+    localStorage.setItem(DENSITY_KEY, v);
+  } catch {
+    /* no-op */
+  }
+}
 
 /**
  * SignalsPanel — right-side list of topics whose signals are inside the
@@ -35,8 +53,24 @@ export function SignalsPanel({
   loading,
   tier,
   onHoverTopic,
+  focusedTopicId,
 }) {
   const isFree = tier !== "pro";
+  const [density, setDensity] = useState(loadDensity);
+  const isCompact = density === "compact";
+  const listRef = useRef(null);
+
+  // Auto-scroll the focused row into view whenever the URL topic_id changes
+  // or the list re-renders with that row present.
+  useEffect(() => {
+    if (focusedTopicId == null || !listRef.current) return;
+    const node = listRef.current.querySelector(
+      `[data-testid='signal-row-${focusedTopicId}']`,
+    );
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focusedTopicId, visibleTopics]);
 
   if (!open) {
     return (
@@ -104,9 +138,22 @@ export function SignalsPanel({
             {o.label}
           </button>
         ))}
+        <button
+          data-testid="density-toggle"
+          onClick={() => {
+            const next = isCompact ? "comfortable" : "compact";
+            setDensity(next);
+            saveDensity(next);
+          }}
+          className="ml-auto inline-flex items-center gap-1 rounded-sm border hairline px-1.5 py-0.5 mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-neutral-100"
+          title={isCompact ? "Switch to comfortable rows" : "Switch to compact rows"}
+        >
+          {isCompact ? <Rows3 className="h-3 w-3" /> : <Rows4 className="h-3 w-3" />}
+          {isCompact ? "compact" : "cozy"}
+        </button>
       </div>
 
-      <ol data-testid="signals-list" className="flex-1 overflow-auto">
+      <ol data-testid="signals-list" ref={listRef} className="flex-1 overflow-auto">
         {visibleTopics.length === 0 && !loading && (
           <li className="p-4 text-center text-xs text-muted-foreground">
             Nothing named in this view — try zooming out or panning to a hot region.
@@ -115,26 +162,30 @@ export function SignalsPanel({
         {visibleTopics.map((row, i) => {
           const t = row.topic;
           const locked = isFree && i >= FREE_VISIBLE;
+          const rank = i + 1;
+          const isFocused = focusedTopicId != null && focusedTopicId === t.topic_id;
           return (
             <li
               key={t.topic_id}
               data-testid={`signal-row-${t.topic_id}`}
               data-locked={locked ? "true" : "false"}
-              className={`relative border-b hairline ${locked ? "bg-secondary/10" : ""}`}
-              onMouseEnter={() => onHoverTopic && onHoverTopic(t.topic_id)}
-              onFocus={() => onHoverTopic && onHoverTopic(t.topic_id)}
+              className={`relative border-b hairline ${locked ? "bg-secondary/10" : ""} ${
+                isFocused ? "bg-[hsl(25,95%,60%)]/10 ring-1 ring-inset ring-[hsl(25,95%,60%)]/40" : ""
+              }`}
+              onMouseEnter={() => onHoverTopic && onHoverTopic({ topicId: t.topic_id, rank, locked })}
+              onFocus={() => onHoverTopic && onHoverTopic({ topicId: t.topic_id, rank, locked })}
             >
               <Link
                 to={locked ? "#" : `/topic/${t.topic_id}`}
                 onClick={(e) => {
                   if (locked) e.preventDefault();
                 }}
-                className={`group flex items-start gap-3 px-3 py-2.5 no-underline transition-colors ${
+                className={`group flex items-start gap-3 ${isCompact ? "px-3 py-1.5" : "px-3 py-2.5"} no-underline transition-colors ${
                   locked ? "cursor-default" : "hover:bg-secondary/40"
                 }`}
               >
                 <div className="mono w-5 text-right text-[10px] text-muted-foreground">
-                  {i + 1}
+                  {rank}
                 </div>
                 <div
                   className="min-w-0 flex-1"
@@ -148,15 +199,17 @@ export function SignalsPanel({
                   <div className="truncate text-sm text-neutral-100 group-hover:text-white">
                     {safeName(t)}
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                    {t.status && <StatusChip status={t.status} />}
-                    {t.sector && (
-                      <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                        {t.sector}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                  {!isCompact && (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                      {t.status && <StatusChip status={t.status} />}
+                      {t.sector && (
+                        <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                          {t.sector}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <div className={`${isCompact ? "mt-1" : "mt-1.5"} flex items-center justify-between gap-2`}>
                     <HeatBadge
                       percentile={t.heat_percentile}
                       confidence={t.heat_confidence}

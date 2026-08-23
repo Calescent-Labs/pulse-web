@@ -143,12 +143,31 @@ export default function MapPage() {
   );
   const [signalsSort, setSignalsSort] = useState("count");
   const [hoveredTopicId, setHoveredTopicId] = useState(null);
+  const [hoveredRank, setHoveredRank] = useState(null);
+  const [hoveredLocked, setHoveredLocked] = useState(false);
   const boundsTimer = useRef(null);
   const onBoundsChange = useCallback((b) => {
-    // debounce so panning at 60fps doesn't refilter the list on every frame
     if (boundsTimer.current) clearTimeout(boundsTimer.current);
     boundsTimer.current = setTimeout(() => setVisibleBounds(b), 180);
   }, []);
+  const onHoverTopic = useCallback((info) => {
+    if (info == null) {
+      setHoveredTopicId(null);
+      setHoveredRank(null);
+      setHoveredLocked(false);
+      return;
+    }
+    setHoveredTopicId(info.topicId);
+    setHoveredRank(info.rank);
+    setHoveredLocked(Boolean(info.locked));
+  }, []);
+
+  // Screen-space centroid of the highlighted topic's points (for the ghost chip).
+  // MapCanvas computes it via viewport.project and calls back.
+  const [highlightScreen, setHighlightScreen] = useState(null);
+  useEffect(() => {
+    if (hoveredTopicId == null) setHighlightScreen(null);
+  }, [hoveredTopicId]);
 
   // Compute topics visible inside the current viewport by aggregating points.
   // Falls back to the full topic feed sorted by heat until we have a bounds
@@ -234,9 +253,30 @@ export default function MapPage() {
               bounds={bounds}
               onBoundsChange={onBoundsChange}
               hoveredTopicId={hoveredTopicId}
+              onHighlightScreen={setHighlightScreen}
             />
           )}
         </div>
+
+        {/* Ghost rank chip — floats near the highlighted cluster's screen
+            centroid so a Free user hovering a blurred row sees "cluster #N"
+            without reading the topic name. */}
+        {hoveredRank != null && highlightScreen && (
+          <div
+            data-testid="ghost-rank-chip"
+            className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2 rounded-sm border hairline bg-background/95 px-2 py-1 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(48,95%,68%)] shadow-lg backdrop-blur"
+            style={{
+              left: `${highlightScreen.x}px`,
+              top: `${Math.max(24, highlightScreen.y - 20)}px`,
+            }}
+          >
+            <span className="text-neutral-300">cluster</span>{" "}
+            <span className="text-neutral-50">#{hoveredRank}</span>
+            {hoveredLocked && (
+              <span className="ml-1.5 text-neutral-500">· pro</span>
+            )}
+          </div>
+        )}
 
         {/* Signals panel — right-side list of topics inside the current view.
             Replaces the old ambient hint (redundant now that the panel makes
@@ -251,7 +291,8 @@ export default function MapPage() {
             onToggle={() => setSignalsOpen((o) => !o)}
             loading={mapQuery.isLoading || topicsQuery.isLoading}
             tier={tier}
-            onHoverTopic={setHoveredTopicId}
+            onHoverTopic={onHoverTopic}
+            focusedTopicId={focusTopicId}
           />
         )}
 

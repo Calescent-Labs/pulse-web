@@ -23,6 +23,7 @@ export function MapCanvas({
   bounds,
   onBoundsChange,
   hoveredTopicId,
+  onHighlightScreen,
 }) {
   const initialViewState = useMemo(() => {
     if (!bounds) return { target: [0, 0, 0], zoom: 5 };
@@ -114,12 +115,42 @@ export function MapCanvas({
     return out;
   }, [heatData, highlightPoints, showHeat, hoveredTopicId]);
 
+  // World-space centroid of the highlighted topic's points, computed once
+  // per highlight change. Screen projection happens per-frame in onAfterRender
+  // so it stays correct as the user pans/zooms.
+  const highlightCentroid = useMemo(() => {
+    if (!highlightPoints.length) return null;
+    let sx = 0, sy = 0;
+    for (const p of highlightPoints) {
+      sx += p.x;
+      sy += p.y;
+    }
+    return [sx / highlightPoints.length, sy / highlightPoints.length];
+  }, [highlightPoints]);
+
   const lastReportedRef = useRef("");
+  const lastCentroidKeyRef = useRef("");
   const reportBounds = useCallback(
     ({ viewports }) => {
-      if (!onBoundsChange) return;
       const vp = viewports && viewports[0];
       if (!vp) return;
+
+      // Project highlight centroid to screen coordinates, fire callback.
+      if (onHighlightScreen) {
+        if (highlightCentroid) {
+          const [sx, sy] = vp.project([highlightCentroid[0], highlightCentroid[1], 0]);
+          const key = `${sx.toFixed(1)}|${sy.toFixed(1)}`;
+          if (key !== lastCentroidKeyRef.current) {
+            lastCentroidKeyRef.current = key;
+            onHighlightScreen({ x: sx, y: sy });
+          }
+        } else if (lastCentroidKeyRef.current !== "") {
+          lastCentroidKeyRef.current = "";
+          onHighlightScreen(null);
+        }
+      }
+
+      if (!onBoundsChange) return;
       const [minX, maxY] = vp.unproject([0, 0]);
       const [maxX, minY] = vp.unproject([vp.width, vp.height]);
       const key = `${minX.toFixed(3)}|${maxX.toFixed(3)}|${minY.toFixed(3)}|${maxY.toFixed(3)}`;
@@ -127,7 +158,7 @@ export function MapCanvas({
       lastReportedRef.current = key;
       onBoundsChange({ minX, maxX, minY, maxY });
     },
-    [onBoundsChange],
+    [onBoundsChange, onHighlightScreen, highlightCentroid],
   );
 
   return (
