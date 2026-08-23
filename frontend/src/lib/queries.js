@@ -1,5 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { getHealth, getMap, getNeighbours, getSectors, getTopic, getTopics } from "./pulseClient";
+import {
+  getHealth,
+  getMap,
+  getMapRegion,
+  getMapTimelapse,
+  getNeighbours,
+  getSectors,
+  getTopic,
+  getTopics,
+} from "./pulseClient";
 import { useTier } from "./tierContext";
 
 // Data updates hourly server-side and is cached 5 min; we set staleTime to
@@ -59,12 +68,12 @@ export function useNeighbours({ topicId, limit = 6 }) {
   });
 }
 
-export function useMap({ window, asof, limit, mode, percentile, topic_id }) {
+export function useMap({ window, asof, limit, mode, percentile, topic_id, aggregated, resolution, points }) {
   const { apiKey, tier } = useTier();
   return useQuery({
-    queryKey: ["map", { window, asof, limit, mode, percentile, topic_id, tier }],
+    queryKey: ["map", { window, asof, limit, mode, percentile, topic_id, aggregated, resolution, points, tier }],
     queryFn: ({ signal }) =>
-      getMap({ window, asof, limit, mode, percentile, topic_id, apiKey, signal }),
+      getMap({ window, asof, limit, mode, percentile, topic_id, aggregated, resolution, points, apiKey, signal }),
     enabled: Boolean(apiKey),
     staleTime: 60_000,
     retry: (failureCount, err) => {
@@ -74,6 +83,35 @@ export function useMap({ window, asof, limit, mode, percentile, topic_id }) {
     // The scrubber changes asof frequently — keep previous data during
     // transitions so the map doesn't flash empty.
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useMapTimelapse({ days = 7, resolution = "4h", grid = 40, window } = {}) {
+  const { apiKey, tier } = useTier();
+  return useQuery({
+    queryKey: ["timelapse", { days, resolution, grid, window, tier }],
+    queryFn: ({ signal }) => getMapTimelapse({ days, resolution, grid, window, apiKey, signal }),
+    enabled: Boolean(apiKey),
+    // Precomputed once per hour server-side — a longer stale window is fine.
+    staleTime: 5 * 60_000,
+    retry: (failureCount, err) => {
+      if (err && (err.code === 401 || err.code === 402)) return false;
+      return failureCount < 1;
+    },
+  });
+}
+
+export function useMapRegion({ x, y, radius, window, asof, limit, enabled = true }) {
+  const { apiKey, tier } = useTier();
+  return useQuery({
+    queryKey: ["region", { x, y, radius, window, asof, limit, tier }],
+    queryFn: ({ signal }) => getMapRegion({ x, y, radius, window, asof, limit, apiKey, signal }),
+    enabled: Boolean(apiKey) && enabled && Number.isFinite(x) && Number.isFinite(y),
+    staleTime: 60_000,
+    retry: (failureCount, err) => {
+      if (err && (err.code === 401 || err.code === 402 || err.code === 404)) return false;
+      return failureCount < 1;
+    },
   });
 }
 

@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only validation of Pulse Phase A (Landing timelapse) and Phase B (Map 3D view + Region Investigation panel) plus P2 polish (Get Notified CTA and feature-scoped SignUp modal). All P0/P1/P2 acceptance criteria pass. External Calescent v1.2 API (staging tunnel) responds within seconds and no cold-start issue observed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Landing hero", "issues": ["Watermark showed '43 frames' from server while spec/task said 42. Minor: the code doesn't hardcode 42 (uses frames.length) — server actually returns 43 frames at resolution=4h over 7 days. Not a bug in frontend; consider updating spec/copy if 42 is the intended contract."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "SignUpModal: form input has no `name` attribute and submit doesn't post anywhere (documented placeholder behavior — expected).",
+    "MapPage: signalsOpen state defaults from window.innerWidth on first render — fine for SSR-less CRA but flag if SSR is added later.",
+    "AmbientHeat: interval 220ms × 43 frames ≈ 9.5s loop — matches spec.",
+    "Region panel absorbs bottom scrubber via right-3 offset (352px) — layout works but the scrubber container overlaps the region panel visually on smaller widths; consider a small responsive tweak (right=336px matches panel width).",
+    "MapPage regionCentre is cleared on view/mode/win/topic change (good), but is NOT cleared on percentile change — likely intentional but worth confirming."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "none required",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Landing timelapse renders (frame counter advances, e.g. 3/43 → 4/43). Caption 'heat behind · 7-day timelapse · 4h frames · loops continuously' present. Roadmap 'coming soon' block updated with 'Now live in the hero above.'. Map 2D default with heat + signals panel + 3 topics readable + rows 4+ blurred. view-3d toggle renders extruded hex columns with proper violet→pink→red→yellow color gradient (not all-yellow), '135 hex cells' label, heat-toggle disabled. Clicking anywhere on 2D map opens RegionPanel with r=1: showed coherence=0.71 → 'One story.' copy in a hot area; showed 'nothing here' in an empty area. region-panel-close removes panel and signals-panel returns. Signals panel is correctly hidden while region open (they share slot). Get Notified triggers signup-modal with lead bullet 'Pro launch — coming with Pro.'. Trending 'sector filter' pill triggers signup with lead 'Full trending feed with sector, status, sentiment filters.'. Map scrubber 'Time Travel' pill triggers lead 'Time travel — scrub the map back 30 days.'. Trending search + rows + Free-tier blur all render. Topic detail /topic/150: velocity/acceleration Recharts render, historical depth blurred (Pro), related radar & compare panes are Pro-gated (as expected).",
+  "rca of the issue": "No blocking issues."
+}

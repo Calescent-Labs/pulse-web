@@ -9,6 +9,32 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 
+const PRO_FEATURES = [
+  { key: "time travel", text: "Time travel — scrub the map back 30 days." },
+  { key: "sector filter", text: "Full trending feed with sector, status, sentiment filters." },
+  { key: "extended history", text: "Historical depth per topic — heat, sentiment, members, related." },
+  { key: "cluster investigation", text: "Cluster investigation and shared research surfaces." },
+];
+
+/**
+ * Order the bullets so the triggered feature (if any) is first. Any
+ * feature not in our canonical list gets promoted as a bespoke lead
+ * bullet — so a rare/unexpected trigger still lands honestly at the top.
+ */
+function orderedProFeatures(feature) {
+  const key = (feature || "").toLowerCase().trim();
+  if (!key) return PRO_FEATURES;
+  const match = PRO_FEATURES.find((f) => f.key === key);
+  if (match) {
+    return [match, ...PRO_FEATURES.filter((f) => f !== match)];
+  }
+  // Unknown feature — surface it as a lead bullet so the modal reads on-topic.
+  return [
+    { key, text: `${feature.charAt(0).toUpperCase()}${feature.slice(1)} — coming with Pro.` },
+    ...PRO_FEATURES,
+  ];
+}
+
 /**
  * SignUpModal — placeholder Pro sign-up affordance.
  *
@@ -53,11 +79,19 @@ export function SignUpProvider({ children }) {
             </DialogDescription>
           </DialogHeader>
 
-          <ul className="my-2 space-y-1.5 border-l border-l-[hsl(25,95%,60%)]/40 pl-3 text-xs text-neutral-300">
-            <li>Time travel — scrub the map back 30 days.</li>
-            <li>Full trending feed with sector, status, sentiment filters.</li>
-            <li>Historical depth per topic — heat, sentiment, members, related.</li>
-            <li>Cluster investigation and shared research surfaces.</li>
+          <ul
+            data-testid="signup-features"
+            className="my-2 space-y-1.5 border-l border-l-[hsl(25,95%,60%)]/40 pl-3 text-xs text-neutral-300"
+          >
+            {orderedProFeatures(triggerFeature).map((f, i) => (
+              <li
+                key={f.key}
+                className={i === 0 && triggerFeature ? "text-neutral-50" : undefined}
+                data-testid={i === 0 ? "signup-feature-lead" : undefined}
+              >
+                {f.text}
+              </li>
+            ))}
           </ul>
 
           <form

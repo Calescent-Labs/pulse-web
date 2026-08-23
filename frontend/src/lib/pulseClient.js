@@ -217,11 +217,60 @@ export function getTopic({ topicId, history_hours, members, apiKey, signal }) {
 
 /**
  * GET /v1/map — the semantic map.
- * @param {{window?:'24h'|'72h'|'7d'|'30d', asof?:string, limit?:number, mode?:'cumulative'|'moment', percentile?:number|'all', topic_id?:number, apiKey:string, signal?:AbortSignal}} opts
+ * @param {{window?:'24h'|'72h'|'7d'|'30d', asof?:string, limit?:number, mode?:'cumulative'|'moment', percentile?:number|'all', topic_id?:number, aggregated?:'hex'|'grid', resolution?:number, points?:boolean, apiKey:string, signal?:AbortSignal}} opts
  */
-export function getMap({ window: win, asof, limit, mode, percentile, topic_id, apiKey, signal }) {
+export function getMap({
+  window: win,
+  asof,
+  limit,
+  mode,
+  percentile,
+  topic_id,
+  aggregated,
+  resolution,
+  points: pts,
+  apiKey,
+  signal,
+}) {
   return request("/v1/map", {
-    params: { window: win, asof, limit, mode, percentile, topic_id },
+    params: {
+      window: win,
+      asof,
+      limit,
+      mode,
+      percentile,
+      topic_id,
+      aggregated,
+      resolution,
+      // Server accepts explicit `false` string; only send when caller sets it.
+      points: pts === false ? "false" : undefined,
+    },
+    apiKey,
+    signal,
+  });
+}
+
+/**
+ * GET /v1/map/timelapse — precomputed animation frames.
+ * `data.frames[i].cells[y][x]` is a normalised 0–1 density grid.
+ * @param {{days?:number, resolution?:'hourly'|'4h'|'daily', grid?:number, window?:'24h'|'72h'|'7d'|'30d', apiKey:string, signal?:AbortSignal}} opts
+ */
+export function getMapTimelapse({ days = 7, resolution = "4h", grid = 40, window: win = "24h", apiKey, signal }) {
+  return request("/v1/map/timelapse", {
+    params: { days, resolution, grid, window: win },
+    apiKey,
+    signal,
+  });
+}
+
+/**
+ * GET /v1/map/region — what is actually inside a region (coherence-checked).
+ * `asof` and windows >24h remain Pro.
+ * @param {{x:number, y:number, radius?:number, window?:string, asof?:string, limit?:number, apiKey:string, signal?:AbortSignal}} opts
+ */
+export function getMapRegion({ x, y, radius = 1.0, window: win, asof, limit = 5, apiKey, signal }) {
+  return request("/v1/map/region", {
+    params: { x, y, radius, window: win, asof, limit },
     apiKey,
     signal,
   });

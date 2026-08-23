@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Download, Filter, Link2, Lock, Pause, Play, X } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, Download, Filter, Layers, Link2, Lock, Pause, Play, Sparkles, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ErrorState, EmptyState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
 import { LockedFeature } from "../components/LockedFeature";
 import { MapCanvas } from "../components/MapCanvas";
 import { SignalsPanel } from "../components/SignalsPanel";
+import { RegionPanel } from "../components/RegionPanel";
 import { HeatBadge } from "../components/HeatBadge";
-import { useMap, useTopic, useTopics } from "../lib/queries";
+import { useMap, useMapRegion, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
+import { useSignUpModal } from "../components/SignUpModal";
 import { formatHoursAgo, safeName } from "../lib/format";
 import { Sparkline } from "../components/Sparkline";
 import { downloadTopicOg } from "../lib/ogCanvas";
@@ -57,6 +59,7 @@ function useFixedBounds(points, resetToken) {
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
   const { tier } = useTier();
+  const { open: openSignUp } = useSignUpModal();
 
   const win = params.get("window") || "24h";
   const asof = params.get("asof") || "";
@@ -64,6 +67,8 @@ export default function MapPage() {
   const mode = params.get("mode") === "moment" ? "moment" : "cumulative";
   const percentile = PERCENTILES.includes(params.get("percentile")) ? params.get("percentile") : "25";
   const focusTopicId = params.get("topic_id") ? Number(params.get("topic_id")) : undefined;
+  const view = params.get("view") === "3d" ? "3d" : "2d";
+  const is3D = view === "3d";
 
   // Scrubber UI (Pro only)
   const [scrubHours, setScrubHours] = useState(() => {
@@ -104,10 +109,15 @@ export default function MapPage() {
   const mapQuery = useMap({
     window: win,
     asof: asof || undefined,
-    limit,
+    limit: is3D ? undefined : limit,
     mode,
     percentile: mode === "moment" ? percentile : undefined,
     topic_id: focusTopicId,
+    aggregated: is3D ? "hex" : undefined,
+    resolution: is3D ? 40 : undefined,
+    // 3D view drops points entirely — cells drive the render, so keep the
+    // payload under mobile budgets.
+    points: is3D ? false : undefined,
   });
   // Topics feed used only for weighting the heat by velocity — no rendering.
   const topicsQuery = useTopics({ limit: 100 });
@@ -118,8 +128,14 @@ export default function MapPage() {
   }, [topicsQuery.data]);
 
   const points = mapQuery.data?.data?.points || [];
+  const cells = mapQuery.data?.data?.cells || [];
+  const cellSize = mapQuery.data?.data?.cell_size;
   const noteMsg = mapQuery.data?.data?.note;
-  const bounds = useFixedBounds(points, focusTopicId ? "focus" : `${mode}:${win}`);
+  // 3D uses server-returned bounds directly (points are omitted); 2D falls
+  // back to session-scoped bounds computed from the point cloud.
+  const responseBounds = mapQuery.data?.data?.bounds || mapQuery.data?.meta?.bounds || null;
+  const pointBounds = useFixedBounds(points, focusTopicId ? "focus" : `${mode}:${win}:${view}`);
+  const bounds = is3D ? responseBounds : pointBounds;
   const disclaimer = mapQuery.data?.meta?.disclaimer;
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
   const returnedMode = mapQuery.data?.data?.mode || mapQuery.data?.meta?.mode || mode;
@@ -168,6 +184,26 @@ export default function MapPage() {
   useEffect(() => {
     if (hoveredTopicId == null) setHighlightScreen(null);
   }, [hoveredTopicId]);
+
+  // Region investigation — user clicks the map/hex → we fetch /v1/map/region
+  // and slide a right-side panel in. Cleared on close, on view flip, and on
+  // window/mode change (the same "session" concerns as bounds).
+  const [regionCentre, setRegionCentre] = useState(null);
+  useEffect(() => {
+    setRegionCentre(null);
+  }, [view, mode, win, focusTopicId]);
+  const onRegionClick = useCallback((c) => {
+    if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) return;
+    setRegionCentre({ x: c.x, y: c.y, radius: c.radius || 1.0 });
+  }, []);
+  const regionQuery = useMapRegion({
+    x: regionCentre?.x,
+    y: regionCentre?.y,
+    radius: regionCentre?.radius,
+    window: win,
+    limit: 5,
+    enabled: Boolean(regionCentre),
+  });
 
   // Compute topics visible inside the current viewport by aggregating points.
   // Falls back to the full topic feed sorted by heat until we have a bounds
@@ -232,7 +268,7 @@ export default function MapPage() {
                 staging is tunnelled — first fetch can take up to 2 minutes.
               </div>
             </div>
-          ) : points.length === 0 ? (
+          ) : (points.length === 0 && cells.length === 0) ? (
             <div className="p-6">
               <EmptyState
                 title={mode === "moment" ? "No moment data here" : "No content in this window"}
@@ -247,13 +283,17 @@ export default function MapPage() {
             </div>
           ) : (
             <MapCanvas
+              view={view}
               points={points}
+              cells={cells}
+              cellSize={cellSize}
               topics={topicsMap}
               showHeat={showHeat}
               bounds={bounds}
               onBoundsChange={onBoundsChange}
               hoveredTopicId={hoveredTopicId}
               onHighlightScreen={setHighlightScreen}
+              onRegionClick={onRegionClick}
             />
           )}
         </div>
@@ -279,9 +319,9 @@ export default function MapPage() {
         )}
 
         {/* Signals panel — right-side list of topics inside the current view.
-            Replaces the old ambient hint (redundant now that the panel makes
-            "what am I looking at" the primary right-side answer). */}
-        {hasKey && !mapQuery.isError && (
+            Hidden while the region investigation panel is open (they share
+            the same right-column slot). */}
+        {hasKey && !mapQuery.isError && !regionCentre && (
           <SignalsPanel
             visibleTopics={visibleAggregate.rows}
             visibleNoiseCount={visibleAggregate.noise}
@@ -293,6 +333,15 @@ export default function MapPage() {
             tier={tier}
             onHoverTopic={onHoverTopic}
             focusedTopicId={focusTopicId}
+          />
+        )}
+
+        {/* Region investigation panel — opens on click, in 2D or 3D. */}
+        {hasKey && regionCentre && (
+          <RegionPanel
+            center={regionCentre}
+            query={regionQuery}
+            onClose={() => setRegionCentre(null)}
           />
         )}
 
@@ -358,7 +407,7 @@ export default function MapPage() {
         {/* Top controls */}
         <div
           className={`pointer-events-none absolute top-0 z-10 flex flex-wrap items-start gap-2 p-3 transition-[right] duration-200 ${
-            hasKey && !mapQuery.isError && signalsOpen
+            hasKey && !mapQuery.isError && (signalsOpen || regionCentre)
               ? "left-0 right-[340px]"
               : "inset-x-0"
           }`}
@@ -442,12 +491,44 @@ export default function MapPage() {
           <button
             data-testid="heat-toggle"
             onClick={() => setParam("heat", showHeat ? "0" : "1")}
+            disabled={is3D}
             className={`pointer-events-auto rounded-sm border hairline px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest transition-colors ${
-              showHeat ? "bg-secondary text-neutral-50" : "bg-background/85 text-muted-foreground hover:text-neutral-100"
-            }`}
+              showHeat && !is3D ? "bg-secondary text-neutral-50" : "bg-background/85 text-muted-foreground hover:text-neutral-100"
+            } ${is3D ? "cursor-not-allowed opacity-40" : ""}`}
+            title={is3D ? "Heat field is 2D only — hex columns carry the signal in 3D" : "Toggle the heat field"}
           >
-            heat field {showHeat ? "on" : "off"}
+            heat field {showHeat && !is3D ? "on" : "off"}
           </button>
+
+          {/* 2D / 3D view toggle */}
+          <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
+            <button
+              data-testid="view-2d"
+              onClick={() => setParam("view", "")}
+              className={`inline-flex items-center gap-1 rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
+                view === "2d"
+                  ? "bg-secondary text-neutral-50"
+                  : "text-muted-foreground hover:text-neutral-100"
+              }`}
+              title="Flat semantic heat field"
+            >
+              <Layers className="h-3 w-3" />
+              2D
+            </button>
+            <button
+              data-testid="view-3d"
+              onClick={() => setParam("view", "3d")}
+              className={`inline-flex items-center gap-1 rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
+                view === "3d"
+                  ? "bg-secondary text-neutral-50"
+                  : "text-muted-foreground hover:text-neutral-100"
+              }`}
+              title="Extruded hex columns · height = mean velocity · drag to rotate"
+            >
+              <Box className="h-3 w-3" />
+              3D
+            </button>
+          </div>
 
           <button
             data-testid="copy-share-link"
@@ -497,24 +578,43 @@ export default function MapPage() {
             </button>
           )}
 
-          <div className="pointer-events-auto ml-auto rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            <span className="text-neutral-200">{points.length.toLocaleString()}</span> signals
-            {mapQuery.data?.data?.reference_size ? (
-              <span className="ml-2 text-neutral-500">
-                / {mapQuery.data.data.reference_size.toLocaleString()} in scope
-              </span>
-            ) : null}
-            {returnedMode === "moment" && (
-              <span className="ml-2 heat-2">moment</span>
-            )}
+          <div className="pointer-events-auto ml-auto flex items-center gap-2">
+            <button
+              data-testid="get-notified"
+              onClick={() => openSignUp("Pro launch")}
+              className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-[hsl(25,95%,60%)]/10 px-2.5 py-1.5 mono text-[10px] uppercase tracking-widest text-[hsl(25,95%,72%)] transition-colors hover:bg-[hsl(25,95%,60%)]/20"
+              title="Get notified when Pulse Pro opens (time travel, extended windows, filters)"
+            >
+              <Sparkles className="h-3 w-3" />
+              get notified
+            </button>
+            <div className="rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {is3D ? (
+                <>
+                  <span className="text-neutral-200">{cells.length.toLocaleString()}</span> hex cells
+                </>
+              ) : (
+                <>
+                  <span className="text-neutral-200">{points.length.toLocaleString()}</span> signals
+                  {mapQuery.data?.data?.reference_size ? (
+                    <span className="ml-2 text-neutral-500">
+                      / {mapQuery.data.data.reference_size.toLocaleString()} in scope
+                    </span>
+                  ) : null}
+                </>
+              )}
+              {returnedMode === "moment" && (
+                <span className="ml-2 heat-2">moment</span>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Scrubber */}
         <div
           className={`pointer-events-auto absolute bottom-3 z-10 rounded-sm border hairline bg-background/90 p-3 backdrop-blur transition-[right] duration-200 ${
-            hasKey && !mapQuery.isError && signalsOpen
-              ? "left-3 right-[352px]"
+            hasKey && !mapQuery.isError && (signalsOpen || regionCentre)
+              ? "left-3 right-[340px]"
               : "inset-x-3"
           }`}
         >
