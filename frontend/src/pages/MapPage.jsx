@@ -113,8 +113,10 @@ export default function MapPage() {
     mode,
     percentile: mode === "moment" ? percentile : undefined,
     topic_id: focusTopicId,
-    aggregated: is3D ? "hex" : undefined,
-    resolution: is3D ? 40 : undefined,
+    // 3D renders a continuous heightfield built from grid-aggregated cells.
+    // Higher resolution (50) gives readable ridges without crushing the payload.
+    aggregated: is3D ? "grid" : undefined,
+    resolution: is3D ? 50 : undefined,
     // 3D view drops points entirely — cells drive the render, so keep the
     // payload under mobile budgets.
     points: is3D ? false : undefined,
@@ -495,7 +497,7 @@ export default function MapPage() {
             className={`pointer-events-auto rounded-sm border hairline px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest transition-colors ${
               showHeat && !is3D ? "bg-secondary text-neutral-50" : "bg-background/85 text-muted-foreground hover:text-neutral-100"
             } ${is3D ? "cursor-not-allowed opacity-40" : ""}`}
-            title={is3D ? "Heat field is 2D only — hex columns carry the signal in 3D" : "Toggle the heat field"}
+            title={is3D ? "Heat field is 2D only — the terrain carries the signal in 3D" : "Toggle the heat field"}
           >
             heat field {showHeat && !is3D ? "on" : "off"}
           </button>
@@ -523,7 +525,7 @@ export default function MapPage() {
                   ? "bg-secondary text-neutral-50"
                   : "text-muted-foreground hover:text-neutral-100"
               }`}
-              title="Extruded hex columns · height = mean velocity · drag to rotate"
+              title="Continuous topographic terrain · height = quantity · colour = heat · drag to rotate"
             >
               <Box className="h-3 w-3" />
               3D
@@ -591,7 +593,8 @@ export default function MapPage() {
             <div className="rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
               {is3D ? (
                 <>
-                  <span className="text-neutral-200">{cells.length.toLocaleString()}</span> hex cells
+                  <span className="text-neutral-200">{cells.length.toLocaleString()}</span> populated cells
+                  <span className="ml-2 text-neutral-500">/ 2500 lattice</span>
                 </>
               ) : (
                 <>

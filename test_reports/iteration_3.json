@@ -1,0 +1,37 @@
+{
+  "summary": "Regression test for redesigned 3D topographic terrain view in Pulse map. Verified terrain rendering, count label, rotation, click-to-investigate, 2D regression, view toggle URL sync, heat-toggle disable state in 3D, and Get Notified modal. All 8 requested checks pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MapPage 3D controls", "issues": ["Tooltip on disabled heat-toggle in 3D still reads 'Heat field is 2D only \u2014 hex columns carry the signal in 3D'. Copy is stale post-redesign; should reference the terrain, not hex columns. Non-blocking."]}
+    ]
+  },
+  "test_results": {
+    "3d_terrain_renders": "PASS \u2014 continuous triangle-mesh heightfield paints within ~9s. Screenshot shows peaks, ridges, and valleys with the heat gradient (deep violet lowlands through pink to bright yellow on the tallest peak). No sparse hex columns, not all-white, not monochrome.",
+    "3d_count_label": "PASS \u2014 top-right pill reads '172 populated cells / 2500 lattice'.",
+    "3d_rotation": "PASS \u2014 mouse-drag orbits the camera around the terrain. Two screenshots (initial + post-drag) show different orbit angles.",
+    "3d_click_to_investigate": "PASS \u2014 clicking terrain (empty region) opens region-panel with header 'region 3.42, 8.50 \u00b7 r=1' and 'nothing here' body copy, matching the spec's empty-region branch.",
+    "2d_regression": "PASS \u2014 switching to 2D restores heatmap blooms; signals panel populated (YouTube Gaming Clickbait Compilations, US-Canada Trade War Escalation, Minecraft Challenge Videos as top 3, each with in-view counts). Pill reads '267 signals / 6,008 in scope'.",
+    "toggle_url_sync": "PASS \u2014 view-3d sets ?view=3d in URL; view-2d clears the param (returns to default). Window persistence across toggle: only 24h is available on free tier (72h/7d/30d locked), so multi-window persistence could not be exercised, but URL construction preserves other params (share-link URL retains view/window).",
+    "heat_toggle_disabled_in_3d": "PASS \u2014 heat-toggle button is_disabled()==true in 3D, greyed with cursor-not-allowed. In 2D is_disabled()==false and label reads 'HEAT FIELD ON'.",
+    "get_notified_modal_from_3d": "PASS \u2014 clicking get-notified in 3D opens signup-modal (testids signup-modal, signup-email, signup-submit, signup-close all present). Copy: 'Sign-up is on the way.' with email input and Notify Me CTA."
+  },
+  "test_report_links": ["/app/test_reports/3d_terrain.png", "/app/test_reports/3d_rotated.png", "/app/test_reports/getnotified.png"],
+  "action_items": [
+    "(Minor copy) Update the disabled heat-toggle tooltip in MapPage.jsx (line ~500) from '...hex columns carry the signal in 3D' to reference the terrain/heightfield, since the old hex-column design is gone."
+  ],
+  "critical_code_review_comments": [
+    "terrainMesh.js is well-scoped: log1p compression on counts + two-pass 3x3 box blur produce smooth ridges; low-density vertices lerp to background so empty flatlands sink into the void. Colours are normalised 0..1 floats \u2014 correct for deck.gl 9.x SimpleMeshLayer.",
+    "MapCanvas.jsx cleanly reuses onClick for both views via info.coordinate. OrbitView with orbitAxis='Z' and drag-rotate controller works as expected.",
+    "MapPage.jsx correctly conditions aggregated='grid', resolution=50, points=false when is3D, and correctly disables heat-toggle when is3D. Only cosmetic: the disabled-state tooltip still names 'hex columns'."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (8/8 requested checks pass; 1 minor stale-copy note)"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "3D terrain redesign is verified end-to-end at free tier on desktop 1920x1080 against the live staging tunnel. Only observation is a stale tooltip copy on the disabled heat-toggle referring to 'hex columns' which no longer exist. All data-testids preserved (map-canvas, view-2d, view-3d, region-panel, region-panel-close, region-topics, region-coherence \u2014 the latter two only render for populated regions; empty regions correctly render 'nothing here'). Free-tier windows other than 24h are locked, so cross-window persistence across the 2D/3D toggle was not exercised.",
+  "rca of the issue": "N/A \u2014 no functional bugs found."
+}

@@ -1,9 +1,11 @@
 import React, { useCallback, useMemo, useRef } from "react";
 import DeckGL from "@deck.gl/react";
-import { ScatterplotLayer, ColumnLayer } from "@deck.gl/layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import { OrthographicView, OrbitView } from "@deck.gl/core";
+import { SimpleMeshLayer } from "@deck.gl/mesh-layers";
+import { OrthographicView, OrbitView, LightingEffect, AmbientLight, DirectionalLight } from "@deck.gl/core";
 import { HEATMAP_COLOR_RANGE, heatColor } from "../lib/heat";
+import { buildTerrainMesh } from "../lib/terrainMesh";
 
 /**
  * MapCanvas — deck.gl-backed semantic map.
@@ -14,14 +16,32 @@ import { HEATMAP_COLOR_RANGE, heatColor } from "../lib/heat";
  * names. Clicking anywhere fires `onRegionClick({ x, y })` which the
  * parent uses to open the region investigation panel.
  *
- * 3D mode: rendered from server-aggregated `cells[]` (via
- * `/v1/map?aggregated=hex&points=false`). Each cell becomes an extruded
- * hex column — height driven by `mean_velocity`, colour by velocity
- * ramp. Clicking a hex fires `onRegionClick({ x, y })` with the cell's
- * centre so the region panel picks up exact counts for that spot.
+ * 3D mode: a continuous topographic terrain. The API returns grid-
+ * aggregated cells via `/v1/map?aggregated=grid&points=false`. We build
+ * a triangle-mesh heightfield where elevation encodes content count and
+ * per-vertex colour encodes velocity (heat ramp). A directional light
+ * gives the surface its ridges and valleys. Clicking anywhere on the
+ * terrain fires `onRegionClick({ x, y })` from `info.coordinate`.
  */
 const OVIEW = new OrthographicView({ id: "ortho", controller: true });
 const ORBIT = new OrbitView({ id: "orbit", controller: true, orbitAxis: "Z", fov: 50 });
+
+// Lighting rig for the 3D terrain. Ambient keeps shadow sides readable;
+// directional carves ridges. Reused across renders — safe to define once.
+const TERRAIN_LIGHTING = new LightingEffect({
+  ambient: new AmbientLight({ color: [255, 255, 255], intensity: 1.35 }),
+  key: new DirectionalLight({
+    color: [255, 240, 220],
+    intensity: 2.2,
+    direction: [-1, -2, -1.4],
+    _shadow: false,
+  }),
+  fill: new DirectionalLight({
+    color: [180, 190, 255],
+    intensity: 0.6,
+    direction: [1, 1.5, -0.6],
+  }),
+});
 
 export function MapCanvas({
   view = "2d",
@@ -47,7 +67,7 @@ export function MapCanvas({
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
     return is3D
-      ? { target: [cx, cy, 0], rotationX: 55, rotationOrbit: 20, zoom: 5.4 }
+      ? { target: [cx, cy, 0], rotationX: 50, rotationOrbit: 25, zoom: 5.2 }
       : { target: [cx, cy, 0], zoom: 6 };
   }, [bounds, is3D]);
 
@@ -67,51 +87,50 @@ export function MapCanvas({
     return points.filter((p) => p.topic_id === hoveredTopicId);
   }, [points, hoveredTopicId, is3D]);
 
-  // Velocity range across cells (for extrusion + colour normalisation).
-  const cellStats = useMemo(() => {
-    if (!cells || !cells.length) return { maxV: 0.05, maxCount: 1 };
-    let maxV = 0.001, maxCount = 1;
-    for (const c of cells) {
-      if (c.mean_velocity > maxV) maxV = c.mean_velocity;
-      if (c.count > maxCount) maxCount = c.count;
-    }
-    return { maxV, maxCount };
-  }, [cells]);
+  // Terrain mesh — built once per (cells, bounds) update.
+  const terrain = useMemo(() => {
+    if (!is3D) return null;
+    return buildTerrainMesh({ cells, bounds, resolution: 50, elevationScale: 3.5 });
+  }, [is3D, cells, bounds]);
 
   const layers = useMemo(() => {
     const out = [];
 
     if (is3D) {
-      if (cells && cells.length && cellSize) {
-        // Extruded hex columns — height = velocity, colour = velocity ramp
-        // normalised against the frame's own peak (so ramp uses the full range).
-        const radius = (cellSize / 2) * 1.1;
-        const maxV = cellStats.maxV || 1;
+      if (terrain) {
+        // Continuous heightfield terrain — one big mesh placed at world
+        // origin. Vertex positions already live in world coords, so
+        // getPosition is a no-op.
+        //
+        // deck.gl 9.x's SimpleMeshLayer expects each attribute as
+        // { value: TypedArray, size }. `indices` sits alongside
+        // `attributes` (not inside it) so the geometry builder can pick
+        // it up separately.
         out.push(
-          new ColumnLayer({
-            id: "hex-3d",
-            data: cells,
-            diskResolution: 6,
-            radius,
-            extruded: true,
-            elevationScale: 12,
-            getPosition: (d) => [d.x, d.y, 0],
-            getElevation: (d) => Math.max(0.02, (d.mean_velocity || 0) / maxV),
-            getFillColor: (d) => {
-              // Reuse the 0..1 heat ramp against per-frame max so colour tracks
-              // relative intensity, not absolute velocity magnitude.
-              const norm = Math.max(0, Math.min(1, (d.mean_velocity || 0) / maxV));
-              const [r, g, b] = heatColor(norm);
-              return [r, g, b, 235];
+          new SimpleMeshLayer({
+            id: "terrain-3d",
+            data: [{ position: [0, 0, 0] }],
+            mesh: {
+              attributes: {
+                positions: { value: terrain.positions, size: 3 },
+                normals: { value: terrain.normals, size: 3 },
+                colors: { value: terrain.colors, size: 3 },
+              },
+              indices: { value: terrain.indices, size: 1 },
             },
+            getPosition: (d) => d.position,
+            // Vertex colours drive the palette — this multiplier just
+            // passes them through.
+            getColor: [255, 255, 255, 255],
             pickable: true,
-            opacity: 0.95,
-            material: { ambient: 0.55, diffuse: 0.75, shininess: 24 },
-            onClick: (info) => {
-              if (info?.object && onRegionClick) {
-                onRegionClick({ x: info.object.x, y: info.object.y, radius: cellSize * 0.9 });
-              }
+            material: {
+              ambient: 0.42,
+              diffuse: 0.9,
+              shininess: 18,
+              specularColor: [40, 30, 60],
             },
+            parameters: { depthTest: true },
+            _instanced: false,
           }),
         );
       }
@@ -181,7 +200,7 @@ export function MapCanvas({
       );
     }
     return out;
-  }, [is3D, heatData, highlightPoints, showHeat, hoveredTopicId, cells, cellSize, cellStats, onRegionClick]);
+  }, [is3D, heatData, highlightPoints, showHeat, hoveredTopicId, terrain]);
 
   // World-space centroid of the highlighted topic's points, computed once
   // per highlight change. Screen projection happens per-frame in onAfterRender
@@ -230,18 +249,23 @@ export function MapCanvas({
     [onBoundsChange, onHighlightScreen, highlightCentroid, is3D],
   );
 
-  // Click-to-investigate in 2D. In 3D the ColumnLayer's onClick handles it.
+  // Click-to-investigate — works in both 2D and 3D. In 2D the OrthographicView
+  // ground plane gives us `info.coordinate` for any click; in 3D the terrain
+  // mesh's picking supplies the world (x,y) of the surface point under the
+  // cursor. Clicks that miss the mesh in 3D return no coordinate, so we
+  // simply drop them.
   const onCanvasClick = useCallback(
     (info) => {
-      if (is3D) return; // handled by layer onClick
       if (!onRegionClick) return;
       if (!info || !info.coordinate) return;
       const [x, y] = info.coordinate;
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       onRegionClick({ x, y, radius: 1.0 });
     },
-    [is3D, onRegionClick],
+    [onRegionClick],
   );
+
+  const effects = useMemo(() => (is3D ? [TERRAIN_LIGHTING] : []), [is3D]);
 
   return (
     <DeckGL
@@ -255,6 +279,7 @@ export function MapCanvas({
           : { dragRotate: false, minZoom: 3, maxZoom: 12 }
       }
       layers={layers}
+      effects={effects}
       style={{ position: "absolute", inset: 0, background: "#0a0d13" }}
       getCursor={({ isDragging }) => (isDragging ? "grabbing" : is3D ? "grab" : "crosshair")}
       onAfterRender={reportBounds}
