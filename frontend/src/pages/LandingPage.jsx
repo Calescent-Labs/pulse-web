@@ -395,6 +395,15 @@ export default function LandingPage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // "Settle" animation — after the initial fade-in, ease the text block a
+  // touch left and drift the timelapse a bit right so they stop stacking
+  // over one another. Kicks in ~700ms after paint so the fade lands first.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(true), 700);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <AppShell dense>
       <div data-testid="landing-page" className="relative">
@@ -403,12 +412,28 @@ export default function LandingPage() {
           data-testid="hero"
           className="relative flex min-h-[calc(100vh-104px)] items-center overflow-hidden"
         >
-          <AmbientHeat />
+          {/* Timelapse — drifts right once settled so its bright blooms
+              clear the left column where the copy sits. */}
+          <div
+            data-testid="ambient-heat-wrap"
+            aria-hidden="true"
+            className="absolute inset-0 transition-transform duration-[1600ms] ease-out"
+            style={{
+              transform: settled ? "translate3d(11%, 0, 0)" : "translate3d(0, 0, 0)",
+              willChange: "transform",
+            }}
+          >
+            <AmbientHeat />
+          </div>
 
           <div
-            className={`relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 transition-opacity duration-500 ${
+            className={`relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 transition-[opacity,transform] duration-[1600ms] ease-out ${
               scrolled ? "opacity-95" : "opacity-100"
             }`}
+            style={{
+              transform: settled ? "translate3d(-2.5%, 0, 0)" : "translate3d(0, 0, 0)",
+              willChange: "transform",
+            }}
           >
             <div className="max-w-2xl">
               <div className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2.5 py-1 mono text-[10px] uppercase tracking-[0.22em] text-neutral-300 backdrop-blur">
