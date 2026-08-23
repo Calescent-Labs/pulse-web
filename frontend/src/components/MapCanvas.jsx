@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef } from "react";
 import DeckGL from "@deck.gl/react";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import { OrthographicView } from "@deck.gl/core";
 import { HEATMAP_COLOR_RANGE } from "../lib/heat";
@@ -7,21 +8,22 @@ import { HEATMAP_COLOR_RANGE } from "../lib/heat";
 /**
  * MapCanvas — deck.gl-backed semantic heat map.
  *
- * We render heat regions only, no individual signal dots. The point payload
- * still comes from /v1/map (weighted by parent topic velocity) but nothing
- * per-point is drawn — this is a rendering decision, not an API one.
- *
- * The coordinate space is FIXED per server process (see DATA_CONTRACT.md).
- *
- * Props:
- *   points, topics, showHeat, bounds — as before
- *   onBoundsChange({minX, maxX, minY, maxY}) — fires (debounced by parent)
- *     whenever the visible extent changes, so a companion panel can list the
- *     topics inside the current view.
+ * Heat regions only, no per-signal dots — except an OUTLINE layer that
+ * lights up when the parent hovers a row in the signals panel. That
+ * outline is per-topic point positions, drawn as thin stroked rings so
+ * the geography of a topic is legible on hover without leaking channel
+ * or platform names.
  */
 const OVIEW = new OrthographicView({ id: "ortho", controller: true });
 
-export function MapCanvas({ points, topics, showHeat, bounds, onBoundsChange }) {
+export function MapCanvas({
+  points,
+  topics,
+  showHeat,
+  bounds,
+  onBoundsChange,
+  hoveredTopicId,
+}) {
   const initialViewState = useMemo(() => {
     if (!bounds) return { target: [0, 0, 0], zoom: 5 };
     const cx = (bounds.minX + bounds.maxX) / 2;
@@ -38,42 +40,80 @@ export function MapCanvas({ points, topics, showHeat, bounds, onBoundsChange }) 
     });
   }, [points, topics, showHeat]);
 
-  const layers = useMemo(() => {
-    if (!showHeat || !heatData.length) return [];
-    return [
-      new HeatmapLayer({
-        id: "heat-atmosphere",
-        data: heatData,
-        getPosition: (d) => d.position,
-        getWeight: (d) => d.weight,
-        radiusPixels: 140,
-        intensity: 1.1,
-        threshold: 0.02,
-        colorRange: HEATMAP_COLOR_RANGE,
-        aggregation: "SUM",
-        opacity: 0.55,
-        pickable: false,
-      }),
-      new HeatmapLayer({
-        id: "heat-focus",
-        data: heatData,
-        getPosition: (d) => d.position,
-        getWeight: (d) => d.weight,
-        radiusPixels: 70,
-        intensity: 1.8,
-        threshold: 0.06,
-        colorRange: HEATMAP_COLOR_RANGE,
-        aggregation: "SUM",
-        opacity: 0.9,
-        pickable: false,
-      }),
-    ];
-  }, [heatData, showHeat]);
+  // Points belonging to the hovered topic — drawn as outlined rings so the
+  // geography lights up without exposing per-point content.
+  const highlightPoints = useMemo(() => {
+    if (hoveredTopicId == null || !points || !points.length) return [];
+    return points.filter((p) => p.topic_id === hoveredTopicId);
+  }, [points, hoveredTopicId]);
 
-  // Report the actual rendered viewport bounds to the parent. We use
-  // onAfterRender because it gives us the resolved viewport instance
-  // (including any user pan/zoom), not just the raw viewState. Debounce
-  // handled by the parent so we don't refilter the panel on every frame.
+  const layers = useMemo(() => {
+    const out = [];
+    if (showHeat && heatData.length) {
+      out.push(
+        new HeatmapLayer({
+          id: "heat-atmosphere",
+          data: heatData,
+          getPosition: (d) => d.position,
+          getWeight: (d) => d.weight,
+          radiusPixels: 140,
+          intensity: 1.1,
+          threshold: 0.02,
+          colorRange: HEATMAP_COLOR_RANGE,
+          aggregation: "SUM",
+          opacity: 0.55,
+          pickable: false,
+        }),
+        new HeatmapLayer({
+          id: "heat-focus",
+          data: heatData,
+          getPosition: (d) => d.position,
+          getWeight: (d) => d.weight,
+          radiusPixels: 70,
+          intensity: 1.8,
+          threshold: 0.06,
+          colorRange: HEATMAP_COLOR_RANGE,
+          aggregation: "SUM",
+          opacity: 0.9,
+          pickable: false,
+        }),
+      );
+    }
+    if (highlightPoints.length) {
+      // Faint fill for volume + bright stroked ring for clarity.
+      out.push(
+        new ScatterplotLayer({
+          id: "topic-highlight-fill",
+          data: highlightPoints,
+          getPosition: (d) => [d.x, d.y, 0],
+          getFillColor: [255, 200, 90, 90],
+          getRadius: 4,
+          radiusUnits: "pixels",
+          stroked: false,
+          pickable: false,
+          opacity: 0.9,
+        }),
+        new ScatterplotLayer({
+          id: "topic-highlight-ring",
+          data: highlightPoints,
+          getPosition: (d) => [d.x, d.y, 0],
+          getFillColor: [0, 0, 0, 0],
+          getLineColor: [255, 235, 140, 240],
+          getRadius: 6,
+          radiusUnits: "pixels",
+          getLineWidth: 1.4,
+          lineWidthUnits: "pixels",
+          stroked: true,
+          filled: true,
+          pickable: false,
+          opacity: 1,
+          updateTriggers: { getPosition: [hoveredTopicId] },
+        }),
+      );
+    }
+    return out;
+  }, [heatData, highlightPoints, showHeat, hoveredTopicId]);
+
   const lastReportedRef = useRef("");
   const reportBounds = useCallback(
     ({ viewports }) => {
@@ -82,8 +122,6 @@ export function MapCanvas({ points, topics, showHeat, bounds, onBoundsChange }) 
       if (!vp) return;
       const [minX, maxY] = vp.unproject([0, 0]);
       const [maxX, minY] = vp.unproject([vp.width, vp.height]);
-      // Cheap change-detection so we don't fire onAfterRender-driven updates
-      // when nothing meaningful moved (still frames, tooltip repaints, etc.)
       const key = `${minX.toFixed(3)}|${maxX.toFixed(3)}|${minY.toFixed(3)}|${maxY.toFixed(3)}`;
       if (key === lastReportedRef.current) return;
       lastReportedRef.current = key;

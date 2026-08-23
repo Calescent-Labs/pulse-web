@@ -1,23 +1,29 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ChevronRight, Lock, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
 import { HeatBadge } from "./HeatBadge";
 import { StatusChip } from "./StatusChip";
 import { formatCompact, safeName } from "../lib/format";
+
+const FREE_VISIBLE = 3;
 
 /**
  * SignalsPanel — right-side list of topics whose signals are inside the
  * current map viewport. Answers "what am I looking at?" without exposing
  * per-signal channel/platform data.
  *
+ * Free tier: only the top 3 rows are readable; the remainder are blurred
+ * with a "coming with Pro" affordance. Every row still fires the hover
+ * callback so the map's outline highlight lights up even for blurred rows.
+ *
  * Props:
- *   visibleTopics: Array<{ topic, countInView, hasHeat }>
+ *   visibleTopics: Array<{ topic, countInView }>
  *   visibleNoiseCount: number
  *   sort: 'count' | 'heat'
- *   onSortChange: (s) => void
- *   open: boolean
- *   onToggle: () => void
- *   loading: boolean
+ *   onSortChange
+ *   open, onToggle, loading
+ *   tier: 'free' | 'pro'
+ *   onHoverTopic(topicId | null)   — fires as user hovers rows
  */
 export function SignalsPanel({
   visibleTopics,
@@ -27,7 +33,11 @@ export function SignalsPanel({
   open,
   onToggle,
   loading,
+  tier,
+  onHoverTopic,
 }) {
+  const isFree = tier !== "pro";
+
   if (!open) {
     return (
       <button
@@ -42,12 +52,13 @@ export function SignalsPanel({
     );
   }
 
-  const total = visibleTopics.length + (visibleNoiseCount > 0 ? 1 : 0);
+  const proLockedCount = Math.max(0, visibleTopics.length - FREE_VISIBLE);
 
   return (
     <aside
       data-testid="signals-panel"
       className="pointer-events-auto absolute right-0 top-0 z-20 flex h-full w-full max-w-[340px] flex-col border-l hairline bg-background/95 backdrop-blur"
+      onMouseLeave={() => onHoverTopic && onHoverTopic(null)}
     >
       <div className="flex items-center justify-between border-b hairline px-3 py-2.5">
         <div className="min-w-0">
@@ -72,7 +83,6 @@ export function SignalsPanel({
         </button>
       </div>
 
-      {/* Sort controls */}
       <div className="flex items-center gap-1 border-b hairline px-3 py-1.5">
         <span className="mr-1 mono text-[10px] uppercase tracking-widest text-muted-foreground">
           sort
@@ -96,7 +106,6 @@ export function SignalsPanel({
         ))}
       </div>
 
-      {/* List */}
       <ol data-testid="signals-list" className="flex-1 overflow-auto">
         {visibleTopics.length === 0 && !loading && (
           <li className="p-4 text-center text-xs text-muted-foreground">
@@ -105,20 +114,37 @@ export function SignalsPanel({
         )}
         {visibleTopics.map((row, i) => {
           const t = row.topic;
+          const locked = isFree && i >= FREE_VISIBLE;
           return (
             <li
               key={t.topic_id}
               data-testid={`signal-row-${t.topic_id}`}
-              className="border-b hairline"
+              data-locked={locked ? "true" : "false"}
+              className={`relative border-b hairline ${locked ? "bg-secondary/10" : ""}`}
+              onMouseEnter={() => onHoverTopic && onHoverTopic(t.topic_id)}
+              onFocus={() => onHoverTopic && onHoverTopic(t.topic_id)}
             >
               <Link
-                to={`/topic/${t.topic_id}`}
-                className="group flex items-start gap-3 px-3 py-2.5 no-underline hover:bg-secondary/40"
+                to={locked ? "#" : `/topic/${t.topic_id}`}
+                onClick={(e) => {
+                  if (locked) e.preventDefault();
+                }}
+                className={`group flex items-start gap-3 px-3 py-2.5 no-underline transition-colors ${
+                  locked ? "cursor-default" : "hover:bg-secondary/40"
+                }`}
               >
                 <div className="mono w-5 text-right text-[10px] text-muted-foreground">
                   {i + 1}
                 </div>
-                <div className="min-w-0 flex-1">
+                <div
+                  className="min-w-0 flex-1"
+                  style={
+                    locked
+                      ? { filter: "blur(5px) grayscale(0.35)", opacity: 0.75 }
+                      : undefined
+                  }
+                  aria-hidden={locked ? "true" : undefined}
+                >
                   <div className="truncate text-sm text-neutral-100 group-hover:text-white">
                     {safeName(t)}
                   </div>
@@ -144,12 +170,37 @@ export function SignalsPanel({
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="mt-1 h-3 w-3 flex-shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                {locked ? (
+                  <Lock className="mt-1 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="mt-1 h-3 w-3 flex-shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                )}
               </Link>
             </li>
           );
         })}
       </ol>
+
+      {isFree && proLockedCount > 0 && (
+        <div
+          data-testid="signals-pro-caveat"
+          className="border-t hairline bg-secondary/40 px-3 py-2"
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-3 w-3 text-[hsl(25,95%,60%)]" />
+            <span className="mono text-[10px] uppercase tracking-[0.18em] text-neutral-100">
+              {proLockedCount} more topic{proLockedCount === 1 ? "" : "s"} in view
+            </span>
+            <span className="text-neutral-500 mono text-[10px]">·</span>
+            <span className="mono text-[10px] uppercase tracking-widest text-[hsl(25,95%,60%)]">
+              coming with Pro
+            </span>
+          </div>
+          <div className="mt-1 mono text-[10px] text-muted-foreground normal-case tracking-normal">
+            Hover any blurred row to still light it up on the map — pinning and reading arrives with sign-up.
+          </div>
+        </div>
+      )}
 
       <div className="border-t hairline px-3 py-2 mono text-[9px] uppercase tracking-widest text-neutral-500">
         Pan or zoom the map — this list updates to match what's visible.

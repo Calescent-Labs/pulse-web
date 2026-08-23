@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { AppShell } from "../components/AppShell";
+import { BlurredSection } from "../components/BlurredSection";
 import { ClosenessRadar } from "../components/ClosenessRadar";
 import { HeatBadge } from "../components/HeatBadge";
 import { SentimentIndicator } from "../components/SentimentIndicator";
@@ -170,6 +171,7 @@ export default function TopicDetailPage() {
   const { id } = useParams();
   const topicId = Number(id);
   const { tier } = useTier();
+  const isFree = tier !== "pro";
 
   const [historyHours, setHistoryHours] = useState(24);
   const q = useTopic({ topicId, history_hours: historyHours, members: 50 });
@@ -263,21 +265,25 @@ export default function TopicDetailPage() {
                 {safeName(topic)}
               </h1>
               {topic.summary && (
-                <p className="mt-3 max-w-3xl text-sm sm:text-base leading-relaxed text-neutral-300">
-                  {topic.summary}
-                </p>
+                <BlurredSection active={isFree} className="mt-3 max-w-3xl">
+                  <p className="text-sm sm:text-base leading-relaxed text-neutral-300">
+                    {topic.summary}
+                  </p>
+                </BlurredSection>
               )}
               {topic.entities && topic.entities.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {topic.entities.map((e) => (
-                    <span
-                      key={e}
-                      className="rounded-sm border hairline bg-secondary/40 px-2 py-0.5 mono text-[10px] uppercase tracking-widest text-neutral-200"
-                    >
-                      {e}
-                    </span>
-                  ))}
-                </div>
+                <BlurredSection active={isFree} className="mt-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {topic.entities.map((e) => (
+                      <span
+                        key={e}
+                        className="rounded-sm border hairline bg-secondary/40 px-2 py-0.5 mono text-[10px] uppercase tracking-widest text-neutral-200"
+                      >
+                        {e}
+                      </span>
+                    ))}
+                  </div>
+                </BlurredSection>
               )}
               <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-5">
                 <div className="col-span-2 sm:col-span-1">
@@ -289,12 +295,22 @@ export default function TopicDetailPage() {
                   </div>
                 </div>
                 <MetricCell label="Velocity" value={formatSigned(topic.signals?.velocity, 4)} />
-                <MetricCell label="Acceleration" value={formatSigned(topic.signals?.acceleration, 4)} />
-                <MetricCell label="Breadth" value={topic.signals?.breadth ?? "—"} sub="channels" />
-                <MetricCell label="Freshness" value={formatConfidence(topic.signals?.freshness)} />
+                <BlurredSection active={isFree}>
+                  <MetricCell label="Acceleration" value={formatSigned(topic.signals?.acceleration, 4)} />
+                </BlurredSection>
+                <BlurredSection active={isFree}>
+                  <MetricCell label="Breadth" value={topic.signals?.breadth ?? "—"} sub="channels" />
+                </BlurredSection>
+                <BlurredSection active={isFree}>
+                  <MetricCell label="Freshness" value={formatConfidence(topic.signals?.freshness)} />
+                </BlurredSection>
               </div>
             </header>
 
+            {/* Everything below the header (history + charts + related) is
+                Pro depth. Free sees the shape but not the values. */}
+            <BlurredSection active={isFree} sticky label="Full topic detail · Coming with Pro">
+              <div>
             {/* History range selector */}
             <div className="my-4 flex flex-wrap items-center gap-2">
               <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">history</span>
@@ -629,6 +645,8 @@ export default function TopicDetailPage() {
                 )}
               </div>
             </section>
+              </div>
+            </BlurredSection>
           </>
         )}
       </div>

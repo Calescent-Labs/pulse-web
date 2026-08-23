@@ -142,6 +142,7 @@ export default function MapPage() {
     typeof window !== "undefined" ? window.innerWidth >= 900 : true,
   );
   const [signalsSort, setSignalsSort] = useState("count");
+  const [hoveredTopicId, setHoveredTopicId] = useState(null);
   const boundsTimer = useRef(null);
   const onBoundsChange = useCallback((b) => {
     // debounce so panning at 60fps doesn't refilter the list on every frame
@@ -232,6 +233,7 @@ export default function MapPage() {
               showHeat={showHeat}
               bounds={bounds}
               onBoundsChange={onBoundsChange}
+              hoveredTopicId={hoveredTopicId}
             />
           )}
         </div>
@@ -248,6 +250,8 @@ export default function MapPage() {
             open={signalsOpen}
             onToggle={() => setSignalsOpen((o) => !o)}
             loading={mapQuery.isLoading || topicsQuery.isLoading}
+            tier={tier}
+            onHoverTopic={setHoveredTopicId}
           />
         )}
 
