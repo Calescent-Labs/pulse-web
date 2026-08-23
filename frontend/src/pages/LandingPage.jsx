@@ -26,7 +26,7 @@ const OVIEW = new OrthographicView({ id: "landing-ortho", controller: false });
  * visible until the first real frame paints, keeping first paint <1s
  * even on cold tunnels.
  */
-function AmbientHeat() {
+function AmbientHeat({ settled = false }) {
   const q = useMapTimelapse({ days: 7, resolution: "4h", grid: 40 });
   const payload = q.data?.data;
   const frames = payload?.frames || [];
@@ -129,30 +129,42 @@ function AmbientHeat() {
       className="absolute inset-0 overflow-hidden"
       style={{ background: "#0a0d13" }}
     >
-      {/* Procedural fallback bloom — visible immediately, hidden once real
-          data paints. Keeps landing paint <1s even on cold tunnels. */}
+      {/* Animated heat visual — the fallback bloom and the deck.gl canvas
+          shift together so the left column clears for the copy. Vignettes
+          and the timelapse watermark stay put so the watermark can never
+          slide out of view. */}
       <div
-        className={`absolute inset-0 transition-opacity duration-1000 ${
-          heatData.length ? "opacity-0" : "opacity-100"
-        }`}
+        className="absolute inset-0 transition-transform duration-[1600ms] ease-out"
+        style={{
+          transform: settled ? "translate3d(11%, 0, 0)" : "translate3d(0, 0, 0)",
+          willChange: "transform",
+        }}
       >
-        <div className="absolute -left-40 top-20 h-[520px] w-[520px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(268,65%,50%,0.55) 0%, transparent 70%)" }} />
-        <div className="absolute right-10 top-40 h-[420px] w-[420px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(25,95%,55%,0.5) 0%, transparent 70%)" }} />
-        <div className="absolute left-1/3 bottom-8 h-[380px] w-[380px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(340,78%,55%,0.45) 0%, transparent 70%)" }} />
-      </div>
+        {/* Procedural fallback bloom — visible immediately, hidden once real
+            data paints. Keeps landing paint <1s even on cold tunnels. */}
+        <div
+          className={`absolute inset-0 transition-opacity duration-1000 ${
+            heatData.length ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          <div className="absolute -left-40 top-20 h-[520px] w-[520px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(268,65%,50%,0.55) 0%, transparent 70%)" }} />
+          <div className="absolute right-10 top-40 h-[420px] w-[420px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(25,95%,55%,0.5) 0%, transparent 70%)" }} />
+          <div className="absolute left-1/3 bottom-8 h-[380px] w-[380px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(340,78%,55%,0.45) 0%, transparent 70%)" }} />
+        </div>
 
-      <div
-        className={`absolute inset-0 transition-opacity duration-1000 ${
-          heatData.length ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        <DeckGL
-          views={OVIEW}
-          initialViewState={initialViewState}
-          controller={false}
-          layers={layers}
-          style={{ position: "absolute", inset: 0 }}
-        />
+        <div
+          className={`absolute inset-0 transition-opacity duration-1000 ${
+            heatData.length ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <DeckGL
+            views={OVIEW}
+            initialViewState={initialViewState}
+            controller={false}
+            layers={layers}
+            style={{ position: "absolute", inset: 0 }}
+          />
+        </div>
       </div>
 
       {/* Vignette so foreground copy stays legible */}
@@ -412,19 +424,9 @@ export default function LandingPage() {
           data-testid="hero"
           className="relative flex min-h-[calc(100vh-104px)] items-center overflow-hidden"
         >
-          {/* Timelapse — drifts right once settled so its bright blooms
-              clear the left column where the copy sits. */}
-          <div
-            data-testid="ambient-heat-wrap"
-            aria-hidden="true"
-            className="absolute inset-0 transition-transform duration-[1600ms] ease-out"
-            style={{
-              transform: settled ? "translate3d(11%, 0, 0)" : "translate3d(0, 0, 0)",
-              willChange: "transform",
-            }}
-          >
-            <AmbientHeat />
-          </div>
+          {/* Timelapse — the shift lives inside AmbientHeat now so its
+              corner watermark stays anchored to the hero's right edge. */}
+          <AmbientHeat settled={settled} />
 
           <div
             className={`relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 transition-[opacity,transform] duration-[1600ms] ease-out ${

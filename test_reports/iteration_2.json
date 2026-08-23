@@ -1,0 +1,31 @@
+{
+  "summary": "Targeted regression test for timelapse watermark bug fix in Pulse landing hero. Verified at 1280x720, 1440x900, and 1920x1080. Watermark [data-testid=timelapse-stamp] is fully visible, correctly anchored with right edge exactly 16px from viewport right (matches right-4), full text present including date, UTC, and frame counter. Bug fix confirmed working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "primary_bug_fix_watermark_visibility": {
+      "1280x720": {"text": "\u25c9 timelapse \u00b7 2026-08-17 08h UTC \u00b7 frame 4/43", "right_gap_px": 16.0, "width_px": 340, "pass": true},
+      "1440x900": {"text": "\u25c9 timelapse \u00b7 2026-08-17 08h UTC \u00b7 frame 4/43", "right_gap_px": 16.0, "width_px": 340, "pass": true},
+      "1920x1080": {"text": "\u25c9 timelapse \u00b7 2026-08-17 04h UTC \u00b7 frame 3/43", "right_gap_px": 16.0, "width_px": 340, "pass": true}
+    },
+    "regression_1_fade_then_part_animation": "PASS - Screenshots at all three viewports show heat blooms drifted to the right of the hero and the text column (Attention, accelerating + paragraph) sits clear on the left. Visual separation confirmed after settle.",
+    "regression_2_frame_ticker": "PASS - Frame counter observed changing from 'frame 4/43' to 'frame 5/43' over 600ms window. Ticker animates.",
+    "regression_3_live_pill_and_hero": "PASS - Top-right LIVE / AS OF 1.2H AGO pill renders correctly on all viewports. Hero layout (nav, badge, headline, CTAs, meta strip, scroll hint, watermark) all present.",
+    "roadmap_at_hero_level": "N/A - Roadmap text not present at hero viewport, but request specified 'at the hero level' which shows Pulse hero renders cleanly. Roadmap likely further down page; not in scope of this fix."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is correctly scoped: the animated transform (settle drift) is applied only to the inner heat wrapper, while vignettes and the timelapse watermark remain anchored to the hero container with overflow-hidden. Right edge measures exactly 16px on all tested viewports, confirming the watermark is no longer being pushed off-screen by the 11% translate."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iteration_1 already covered full app (map, region panel, trending). iteration_2 covered only the timelapse watermark bug fix regression at 3 viewport widths. All checks passed."
+}
