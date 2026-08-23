@@ -307,10 +307,10 @@ export default function TopicDetailPage() {
               </div>
             </header>
 
-            {/* Everything below the header (history + charts + related) is
-                Pro depth. Free sees the shape but not the values. */}
-            <BlurredSection active={isFree} sticky label="Full topic detail · Coming with Pro">
-              <div>
+            {/* History range selector, series-break, and the first arc chart
+                are visible on Free — the "shape of the arc" answer. Depth
+                (heat percentile, sentiment, members, related topics) stays
+                Pro-gated below. */}
             {/* History range selector */}
             <div className="my-4 flex flex-wrap items-center gap-2">
               <span className="mono text-[10px] uppercase tracking-widest text-muted-foreground">history</span>
@@ -393,6 +393,11 @@ export default function TopicDetailPage() {
                   </span>
                 </div>
               </ChartCard>
+            </div>
+
+            {/* Historical depth — Pro-gated */}
+            <BlurredSection active={isFree} sticky label="Historical depth · Coming with Pro">
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
 
               <ChartCard title="Heat percentile" note="A rank, not a smooth trend">
                 <div className="h-56 w-full">
@@ -645,7 +650,6 @@ export default function TopicDetailPage() {
                 )}
               </div>
             </section>
-              </div>
             </BlurredSection>
           </>
         )}
