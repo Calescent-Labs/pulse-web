@@ -66,7 +66,7 @@ function HealthIndicator() {
 }
 
 const NAV = [
-  { to: "/", label: "Map", end: true, id: "nav-map" },
+  { to: "/map", label: "Map", id: "nav-map" },
   { to: "/trending", label: "Trending", id: "nav-trending" },
 ];
 
@@ -98,7 +98,6 @@ export function AppShell({ children, disclaimer, dense = false }) {
               <NavLink
                 key={n.to}
                 to={n.to}
-                end={n.end}
                 data-testid={n.id}
                 className={({ isActive }) =>
                   `rounded-sm px-2.5 py-1 mono text-[11px] uppercase tracking-[0.16em] transition-colors ${
