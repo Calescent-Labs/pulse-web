@@ -1,5 +1,6 @@
 import React from "react";
 import { Lock, Sparkles } from "lucide-react";
+import { useSignUpModal } from "./SignUpModal";
 
 /**
  * LockedFeature — a first-class UI state triggered by the API's 402 responses.
@@ -36,13 +37,16 @@ function copyFor(feature) {
 
 export function LockedFeature({ feature, compact = false, className = "" }) {
   const desc = copyFor(feature);
+  const { open } = useSignUpModal();
 
   if (compact) {
     return (
-      <div
+      <button
+        type="button"
         data-testid="locked-feature-compact"
-        className={`inline-flex items-center gap-2 rounded-sm border hairline bg-secondary/60 px-2 py-1 text-[11px] text-muted-foreground ${className}`}
-        title={`${feature || "Locked"} — coming with Pro`}
+        onClick={() => open(feature)}
+        className={`inline-flex items-center gap-2 rounded-sm border hairline bg-secondary/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-neutral-100 ${className}`}
+        title={`${feature || "Locked"} — click to hear when Pro opens`}
       >
         <Lock className="h-3 w-3" />
         <span className="uppercase tracking-widest text-[10px]">Pro</span>
@@ -52,7 +56,7 @@ export function LockedFeature({ feature, compact = false, className = "" }) {
         <span className="mono uppercase tracking-widest text-[9px] text-[hsl(25,95%,60%)]">
           soon
         </span>
-      </div>
+      </button>
     );
   }
 
@@ -75,14 +79,16 @@ export function LockedFeature({ feature, compact = false, className = "" }) {
           </div>
           <p className="text-xs text-neutral-400 leading-relaxed max-w-xl">{desc}</p>
         </div>
-        <div
+        <button
+          type="button"
           data-testid="coming-soon-pill"
-          className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/60 px-3 py-1.5 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)]"
-          title="Pro sign-up ships with the next milestone."
+          onClick={() => open(feature)}
+          className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/60 px-3 py-1.5 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)] transition-colors hover:bg-background hover:text-[hsl(25,95%,72%)]"
+          title="Get notified when Pro opens"
         >
           <Sparkles className="h-3 w-3" />
           Coming soon
-        </div>
+        </button>
       </div>
     </div>
   );

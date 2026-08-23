@@ -1,5 +1,6 @@
 import React from "react";
 import { Lock, Sparkles } from "lucide-react";
+import { useSignUpModal } from "./SignUpModal";
 
 /**
  * BlurredSection — Free-tier gating wrapper.
@@ -15,6 +16,7 @@ import { Lock, Sparkles } from "lucide-react";
  *   className?: string
  */
 export function BlurredSection({ active = true, label, sticky = false, className = "", children }) {
+  const { open } = useSignUpModal();
   if (!active) return <>{children}</>;
   return (
     <div
@@ -32,19 +34,23 @@ export function BlurredSection({ active = true, label, sticky = false, className
         {children}
       </div>
       <div
-        className={`pointer-events-none absolute inset-0 flex ${
+        className={`absolute inset-0 flex ${
           sticky ? "items-start pt-6" : "items-center"
         } justify-center`}
       >
-        <div
-          className={`inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)] backdrop-blur ${
+        <button
+          type="button"
+          data-testid="blurred-cta"
+          onClick={() => open(label || "Pro depth")}
+          className={`inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)] backdrop-blur transition-colors hover:bg-background hover:text-[hsl(25,95%,72%)] ${
             sticky ? "sticky top-24" : ""
           }`}
+          title="Get notified when Pro opens"
         >
           <Sparkles className="h-3 w-3" />
           <Lock className="h-3 w-3 text-neutral-400" />
           <span>{label || "Coming with Pro"}</span>
-        </div>
+        </button>
       </div>
     </div>
   );
