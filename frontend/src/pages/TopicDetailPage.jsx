@@ -395,6 +395,92 @@ export default function TopicDetailPage() {
               </ChartCard>
             </div>
 
+            {/* Member content — the "jump in" surface. Stays visible on Free
+                tier so the "click any topic and open its content" promise
+                actually delivers. Pro depth (percentile charts, sentiment
+                trajectory, related topics) remains gated below. */}
+            <section
+              data-testid="member-content-section"
+              className="mt-4 rounded-sm border hairline bg-background/40 p-4"
+            >
+              <div className="flex items-baseline justify-between">
+                <h3 className="mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  The content behind this trend
+                </h3>
+                <span className="mono text-[10px] text-neutral-500">
+                  {members.length} items · removed items stay listed
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-neutral-300">
+                These are the actual pieces of content driving this trend. Open any one to
+                consume it at its original source.
+              </p>
+              <ul data-testid="topic-members" className="mt-3 max-h-72 space-y-2 overflow-auto">
+                {members.length === 0 && (
+                  <li className="mono text-xs text-muted-foreground">no member content in range</li>
+                )}
+                {members.map((m) => {
+                  const isDead = m.status === "removed" || m.status === "privated";
+                  return (
+                    <li
+                      key={m.url}
+                      data-testid={`member-${m.status}`}
+                      className={`group flex items-start gap-2 rounded-sm border hairline px-3 py-2.5 transition-colors ${
+                        isDead ? "opacity-60" : "hover:bg-secondary/40 hover:border-[hsl(25,95%,60%)]/30"
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <a
+                          href={m.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          data-testid={`member-title-${m.status}`}
+                          className={`block truncate text-sm no-underline ${
+                            isDead
+                              ? "text-neutral-400 line-through"
+                              : "text-neutral-100 hover:text-white"
+                          }`}
+                        >
+                          {m.title}
+                        </a>
+                        <div className="mt-0.5 mono text-[10px] text-muted-foreground">
+                          {m.channel} · {formatRelativeFromISO(m.published_at)} · {formatCompact(m.views)} views
+                          {m.status !== "live" && (
+                            <span className="ml-1 rounded-sm border hairline px-1 py-0.5 heat-3 uppercase tracking-widest">
+                              {m.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {isDead ? (
+                        <span
+                          className="ml-1 flex-shrink-0 mono text-[9px] uppercase tracking-widest text-neutral-500"
+                          title="This content was removed or made private at the source"
+                        >
+                          unavailable
+                        </span>
+                      ) : (
+                        <a
+                          href={m.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          data-testid={`member-open-${m.status}`}
+                          className="ml-1 inline-flex flex-shrink-0 items-center gap-1.5 rounded-sm border hairline bg-[hsl(25,95%,60%)]/10 px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[hsl(25,95%,72%)] no-underline transition-colors hover:bg-[hsl(25,95%,60%)]/20 hover:text-[hsl(25,95%,80%)]"
+                          title="Open at source"
+                        >
+                          open source
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-3 mono text-[10px] uppercase tracking-widest text-neutral-500">
+                ranked by how much they're contributing to this topic's heat right now
+              </p>
+            </section>
+
             {/* Historical depth — Pro-gated */}
             <BlurredSection active={isFree} sticky label="Historical depth · Coming with Pro">
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -459,47 +545,6 @@ export default function TopicDetailPage() {
                     sampleSize={topic.sentiment?.sample_size}
                   />
                 </div>
-              </ChartCard>
-
-              <ChartCard title="Member content" note={`${members.length} items — removed items stay listed`}>
-                <ul data-testid="topic-members" className="max-h-56 space-y-2 overflow-auto">
-                  {members.length === 0 && (
-                    <li className="mono text-xs text-muted-foreground">no member content in range</li>
-                  )}
-                  {members.map((m) => (
-                    <li
-                      key={m.url}
-                      data-testid={`member-${m.status}`}
-                      className={`group flex items-start gap-2 rounded-sm border hairline px-2 py-2 ${
-                        m.status === "removed" || m.status === "privated" ? "opacity-60" : ""
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <a
-                          href={m.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={`block truncate text-xs no-underline ${
-                            m.status === "removed" || m.status === "privated"
-                              ? "text-neutral-400 line-through"
-                              : "text-neutral-100 hover:text-white"
-                          }`}
-                        >
-                          {m.title}
-                        </a>
-                        <div className="mt-0.5 mono text-[10px] text-muted-foreground">
-                          {m.channel} · {formatRelativeFromISO(m.published_at)} · {formatCompact(m.views)} views
-                          {m.status !== "live" && (
-                            <span className="ml-1 rounded-sm border hairline px-1 py-0.5 heat-3 uppercase tracking-widest">
-                              {m.status}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <ExternalLink className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                    </li>
-                  ))}
-                </ul>
               </ChartCard>
             </div>
 

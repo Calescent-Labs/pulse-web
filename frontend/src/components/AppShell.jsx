@@ -90,7 +90,7 @@ export function AppShell({ children, disclaimer, dense = false }) {
               Pulse
             </span>
             <span className="hidden sm:inline mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              Calescent Labs
+              the internet at a glance
             </span>
           </Link>
           <nav className="flex items-center gap-1">

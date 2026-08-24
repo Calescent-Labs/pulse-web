@@ -221,6 +221,59 @@ function LiveHealthPill() {
   );
 }
 
+function HowItWorks() {
+  const steps = [
+    {
+      n: "01",
+      title: "Scan",
+      body: "Every warm region is a topic gaining attention across the internet right now.",
+    },
+    {
+      n: "02",
+      title: "Discover",
+      body: "Click any hotspot or trending topic to see what's actually inside it.",
+    },
+    {
+      n: "03",
+      title: "Jump in",
+      body: "Open any piece of content at its original source. That's it — no app-hopping.",
+    },
+  ];
+  return (
+    <section
+      data-testid="how-it-works"
+      className="mx-auto mt-24 max-w-6xl px-4 sm:px-6"
+    >
+      <div className="mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+        How Pulse works
+      </div>
+      <h2
+        className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-50"
+        style={{ letterSpacing: "-0.02em" }}
+      >
+        One stop. Then you're gone.
+      </h2>
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {steps.map((s) => (
+          <div
+            key={s.n}
+            data-testid={`how-step-${s.n}`}
+            className="rounded-sm border hairline bg-background/40 p-4"
+          >
+            <div className="flex items-baseline gap-3">
+              <span className="mono text-[10px] uppercase tracking-[0.22em] text-[hsl(25,95%,60%)]">
+                {s.n}
+              </span>
+              <span className="text-base font-medium text-neutral-50">{s.title}</span>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-300">{s.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TrendingPreview() {
   const q = useTopics({ limit: 3 });
   const topics = q.data?.data || [];
@@ -230,7 +283,7 @@ function TrendingPreview() {
       <div className="flex items-baseline justify-between">
         <div>
           <div className="mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-            Right now
+            Trending on the internet right now
           </div>
           <h2
             className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-50"
@@ -300,6 +353,10 @@ function TrendingPreview() {
       >
         see all trending <ArrowRight className="h-3 w-3" />
       </Link>
+
+      <p className="mt-4 mono text-[10px] uppercase tracking-widest text-neutral-500">
+        click any topic to see the actual content and open it at the source →
+      </p>
     </section>
   );
 }
@@ -308,13 +365,13 @@ function Roadmap() {
   return (
     <section data-testid="roadmap" className="mx-auto mt-24 max-w-6xl px-4 sm:px-6">
       <div className="mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-        The instrument, honestly
+        The pitch, honestly
       </div>
       <h2
         className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-50"
         style={{ letterSpacing: "-0.02em" }}
       >
-        What's live, and what's on the way
+        One place for the internet's breakthroughs
       </h2>
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -323,11 +380,36 @@ function Roadmap() {
             live now
           </div>
           <ul className="mt-3 space-y-2 text-sm text-neutral-200">
-            <li>Semantic heat map with fixed geography — signals cluster where they belong.</li>
-            <li>Ranked trending feed with sector filters, text search, and pagination.</li>
-            <li>Topic detail with velocity, acceleration, sentiment, and related topics.</li>
-            <li>Every heat score paired with its confidence — provisional-looking means provisional.</li>
-            <li>Shareable URLs — window, timestamp, and focus travel with the link.</li>
+            <li>
+              <span className="text-neutral-50">Not just what's popular — what's accelerating.</span>{" "}
+              <span className="text-muted-foreground">
+                Pulse ranks by heat velocity, so you catch things while they're still on the way up.
+              </span>
+            </li>
+            <li>
+              <span className="text-neutral-50">Instead of hopping between five apps</span>{" "}
+              <span className="text-muted-foreground">
+                to figure out what's breaking through, watch attention accrue across the open web in one view.
+              </span>
+            </li>
+            <li>
+              <span className="text-neutral-50">See it, then jump straight to it.</span>{" "}
+              <span className="text-muted-foreground">
+                Every topic lists the pieces of content driving the heat — click to open them at their source.
+              </span>
+            </li>
+            <li>
+              <span className="text-neutral-50">Transparent, not clairvoyant.</span>{" "}
+              <span className="text-muted-foreground">
+                Every heat score ships with its confidence. Never a magic number — always the receipts.
+              </span>
+            </li>
+            <li>
+              <span className="text-neutral-50">Shareable URLs.</span>{" "}
+              <span className="text-muted-foreground">
+                Window, timestamp, and focus travel with the link.
+              </span>
+            </li>
           </ul>
         </div>
         <div className="rounded-sm border hairline bg-background/40 p-5">
@@ -344,25 +426,19 @@ function Roadmap() {
             <li>
               <span className="text-neutral-50">Region investigation.</span>{" "}
               <span className="text-muted-foreground">
-                Click any hot region for the topics inside it, with a statistical coherence read.
+                Click any hot region for the topics inside it, with a plain-English coherence read.
               </span>
             </li>
             <li>
-              <span className="text-neutral-50">3D peek view.</span>{" "}
+              <span className="text-neutral-50">Wider coverage.</span>{" "}
               <span className="text-muted-foreground">
-                Extruded hex prisms for pitch/rotate exploration of the same map.
-              </span>
-            </li>
-            <li>
-              <span className="text-neutral-50">More sources.</span>{" "}
-              <span className="text-muted-foreground">
-                Twitter, Reddit, Threads — signal beyond a single platform.
+                More corners of the open web feeding the map — signal beyond any single feed.
               </span>
             </li>
             <li>
               <span className="text-neutral-50">Signed-in Pro tier.</span>{" "}
               <span className="text-muted-foreground">
-                Time travel, extended windows, AI cluster summaries.
+                Time travel, extended windows, cluster summaries, and richer depth per topic.
               </span>
             </li>
           </ul>
@@ -440,7 +516,7 @@ export default function LandingPage() {
             <div className="max-w-2xl">
               <div className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2.5 py-1 mono text-[10px] uppercase tracking-[0.22em] text-neutral-300 backdrop-blur">
                 <Sparkles className="h-3 w-3 text-[hsl(25,95%,60%)]" />
-                a semantic map of attention
+                the internet at a glance
               </div>
 
               <h1
@@ -448,15 +524,16 @@ export default function LandingPage() {
                 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-neutral-50"
                 style={{ letterSpacing: "-0.03em", lineHeight: 1.02 }}
               >
-                Attention,
+                The internet,
                 <br />
-                <span className="heat-3">accelerating.</span>
+                <span className="heat-3">before it's obvious.</span>
               </h1>
 
               <p className="mt-5 max-w-xl text-base sm:text-lg leading-relaxed text-neutral-300">
-                A live read on what's beginning to spread online, before it's obvious. Pulse
-                clusters public content into topics, tracks how fast each is picking up, and lets
-                you watch the map breathe. An instrument, not a hype machine.
+                Pulse scans where audiences are gathering across the open web and surfaces
+                what's actually catching fire — in one place, in one glance. Click any hotspot,
+                see the real content behind it, and open it at its source. No five-tab
+                app-hopping.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -473,7 +550,7 @@ export default function LandingPage() {
                   data-testid="cta-see-trending"
                   className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-4 py-2.5 text-sm text-neutral-100 backdrop-blur transition-colors hover:bg-secondary"
                 >
-                  See trending
+                  See what's trending
                 </Link>
                 <LiveHealthPill />
               </div>
@@ -503,6 +580,7 @@ export default function LandingPage() {
           </div>
         )}
 
+        <HowItWorks />
         <TrendingPreview />
         <Roadmap />
         <HonestyStatement />

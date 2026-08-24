@@ -56,6 +56,57 @@ function useFixedBounds(points, resetToken) {
   }, [points]);
 }
 
+const MAP_HINT_KEY = "pulse:mapHintDismissed";
+
+/**
+ * MapHint — first-visit "how to read the map" chip. Reads/writes a
+ * localStorage flag so returning users never see it again. Small, mono,
+ * bottom-left, above the scrubber; dismiss button collapses it silently.
+ */
+function MapHint() {
+  const [visible, setVisible] = useState(() => {
+    try {
+      if (typeof localStorage === "undefined") return true;
+      return localStorage.getItem(MAP_HINT_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+  if (!visible) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(MAP_HINT_KEY, "1");
+    } catch {
+      /* no-op */
+    }
+    setVisible(false);
+  };
+  return (
+    <div
+      data-testid="map-hint"
+      className="pointer-events-auto absolute top-14 left-3 z-10 max-w-[320px] rounded-sm border hairline bg-background/90 px-3 py-2 backdrop-blur"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)]">
+          how to read the map
+        </div>
+        <button
+          data-testid="map-hint-dismiss"
+          onClick={dismiss}
+          className="-mt-0.5 -mr-1 rounded-sm p-0.5 text-muted-foreground hover:bg-secondary hover:text-neutral-100"
+          title="Got it"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-neutral-300">
+        Warmer areas mean more attention across the internet right now. Click anywhere hot
+        to see what's trending there and jump straight to it.
+      </p>
+    </div>
+  );
+}
+
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
   const { tier } = useTier();
@@ -319,13 +370,20 @@ export default function MapPage() {
           />
         )}
 
-        {/* Region investigation panel — opens on click, in 2D or 3D. */}
+        {/* Region investigation panel — opens on click. */}
         {hasKey && regionCentre && (
           <RegionPanel
             center={regionCentre}
             query={regionQuery}
             onClose={() => setRegionCentre(null)}
           />
+        )}
+
+        {/* First-visit "how to read the map" chip — localStorage-gated so
+            returning users don't see it. Auto-hides when a region panel is
+            open or when the focus banner occupies the same slot. */}
+        {hasKey && !mapQuery.isError && !regionCentre && focusTopicId == null && (
+          <MapHint />
         )}
 
         {/* Focus banner — 24h velocity sparkline of the focused topic */}

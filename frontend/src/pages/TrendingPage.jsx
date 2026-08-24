@@ -328,11 +328,11 @@ export default function TrendingPage() {
               className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight text-neutral-50"
               style={{ letterSpacing: "-0.02em" }}
             >
-              Trending Now
+              Trending on the internet right now
             </h1>
             <p className="mt-2 max-w-xl text-sm text-neutral-400">
-              Topics ordered by heat. Every score ships with its confidence — a
-              provisional-looking number is provisional.
+              The topics gaining the most attention across the open web in the last 24 hours.
+              Click any topic to see the actual content — then open it at its source.
             </p>
           </div>
         </div>
@@ -539,7 +539,7 @@ export default function TrendingPage() {
                 </span>
               </div>
               <div className="mt-1 mono text-[10px] text-muted-foreground normal-case tracking-normal">
-                Free shows the top {FREE_VISIBLE}. Full ranked feed and depth per topic arrives with sign-up.
+                The full list — every trending topic across the internet — unlocks with Pro.
               </div>
             </div>
           )}

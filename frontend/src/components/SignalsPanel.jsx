@@ -78,10 +78,10 @@ export function SignalsPanel({
         data-testid="signals-panel-open"
         onClick={onToggle}
         className="pointer-events-auto absolute right-3 top-32 z-10 inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest text-neutral-200 backdrop-blur transition-colors hover:bg-secondary"
-        title="Show signals in this view"
+        title="Show what's trending in this view"
       >
         <PanelRightOpen className="h-3 w-3" />
-        signals
+        trending here
       </button>
     );
   }
@@ -97,12 +97,12 @@ export function SignalsPanel({
       <div className="flex items-center justify-between border-b hairline px-3 py-2.5">
         <div className="min-w-0">
           <div className="mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            Signals in view
+            What's trending here
           </div>
           <div className="mt-0.5 mono text-[10px] text-neutral-500">
             {loading
               ? "reading viewport…"
-              : `${visibleTopics.length} named ${visibleTopics.length === 1 ? "topic" : "topics"}${
+              : `${visibleTopics.length} ${visibleTopics.length === 1 ? "topic" : "topics"} · click any to open it${
                   visibleNoiseCount > 0 ? ` · ${formatCompact(visibleNoiseCount)} unnamed` : ""
                 }`}
           </div>

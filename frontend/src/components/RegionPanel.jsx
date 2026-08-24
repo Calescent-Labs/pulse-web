@@ -86,6 +86,24 @@ export function RegionPanel({ center, query, onClose }) {
         </div>
       ) : (
         <div className="space-y-4 p-3">
+          {/* Plain-English lead-in — what did you just click on? */}
+          <p
+            data-testid="region-lead"
+            className="text-sm leading-relaxed text-neutral-100"
+          >
+            {coherent ? (
+              <>
+                <span className="font-medium text-neutral-50">You clicked on a real story.</span>{" "}
+                <span className="text-neutral-300">Here's what's inside — click any topic to open its content.</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium text-neutral-50">Nothing single is dominating here.</span>{" "}
+                <span className="text-neutral-300">These topics happen to sit nearby — they're not one story.</span>
+              </>
+            )}
+          </p>
+
           {/* Coherence read — the non-negotiable honesty gate. */}
           <div
             data-testid="region-coherence"
@@ -172,7 +190,7 @@ export function RegionPanel({ center, query, onClose }) {
           {/* Top topics in the region */}
           <div>
             <div className="mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              top topics · by in-region count
+              top topics · click any to open →
             </div>
             <ul data-testid="region-topics" className="mt-2 space-y-1.5">
               {topics.length === 0 ? (
