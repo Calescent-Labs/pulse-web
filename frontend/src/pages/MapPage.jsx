@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Box, ChevronLeft, ChevronRight, Download, Filter, Layers, Link2, Lock, Pause, Play, Sparkles, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Filter, Link2, Lock, Pause, Play, Sparkles, X } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ErrorState, EmptyState } from "../components/ErrorState";
 import { NoKeyState } from "../components/NoKeyState";
@@ -67,10 +67,6 @@ export default function MapPage() {
   const mode = params.get("mode") === "moment" ? "moment" : "cumulative";
   const percentile = PERCENTILES.includes(params.get("percentile")) ? params.get("percentile") : "25";
   const focusTopicId = params.get("topic_id") ? Number(params.get("topic_id")) : undefined;
-  const view = params.get("view") === "3d" ? "3d" : "2d";
-  const is3D = view === "3d";
-  // Terrain metric assignment — swap elevation vs colour without touching data.
-  const terrainMode = params.get("terrain") === "heat-count" ? "heat-count" : "count-heat";
 
   // Scrubber UI (Pro only)
   const [scrubHours, setScrubHours] = useState(() => {
@@ -111,17 +107,10 @@ export default function MapPage() {
   const mapQuery = useMap({
     window: win,
     asof: asof || undefined,
-    limit: is3D ? undefined : limit,
+    limit,
     mode,
     percentile: mode === "moment" ? percentile : undefined,
     topic_id: focusTopicId,
-    // 3D renders a continuous heightfield built from grid-aggregated cells.
-    // Higher resolution (50) gives readable ridges without crushing the payload.
-    aggregated: is3D ? "grid" : undefined,
-    resolution: is3D ? 50 : undefined,
-    // 3D view drops points entirely — cells drive the render, so keep the
-    // payload under mobile budgets.
-    points: is3D ? false : undefined,
   });
   // Topics feed used only for weighting the heat by velocity — no rendering.
   const topicsQuery = useTopics({ limit: 100 });
@@ -132,14 +121,8 @@ export default function MapPage() {
   }, [topicsQuery.data]);
 
   const points = mapQuery.data?.data?.points || [];
-  const cells = mapQuery.data?.data?.cells || [];
-  const cellSize = mapQuery.data?.data?.cell_size;
   const noteMsg = mapQuery.data?.data?.note;
-  // 3D uses server-returned bounds directly (points are omitted); 2D falls
-  // back to session-scoped bounds computed from the point cloud.
-  const responseBounds = mapQuery.data?.data?.bounds || mapQuery.data?.meta?.bounds || null;
-  const pointBounds = useFixedBounds(points, focusTopicId ? "focus" : `${mode}:${win}:${view}`);
-  const bounds = is3D ? responseBounds : pointBounds;
+  const bounds = useFixedBounds(points, focusTopicId ? "focus" : `${mode}:${win}`);
   const disclaimer = mapQuery.data?.meta?.disclaimer;
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
   const returnedMode = mapQuery.data?.data?.mode || mapQuery.data?.meta?.mode || mode;
@@ -189,13 +172,12 @@ export default function MapPage() {
     if (hoveredTopicId == null) setHighlightScreen(null);
   }, [hoveredTopicId]);
 
-  // Region investigation — user clicks the map/hex → we fetch /v1/map/region
-  // and slide a right-side panel in. Cleared on close, on view flip, and on
-  // window/mode change (the same "session" concerns as bounds).
+  // Region investigation — user clicks the map → we fetch /v1/map/region
+  // and slide a right-side panel in. Cleared on close and on session change.
   const [regionCentre, setRegionCentre] = useState(null);
   useEffect(() => {
     setRegionCentre(null);
-  }, [view, mode, win, focusTopicId]);
+  }, [mode, win, focusTopicId]);
   const onRegionClick = useCallback((c) => {
     if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y)) return;
     setRegionCentre({ x: c.x, y: c.y, radius: c.radius || 1.0 });
@@ -272,7 +254,7 @@ export default function MapPage() {
                 staging is tunnelled — first fetch can take up to 2 minutes.
               </div>
             </div>
-          ) : (points.length === 0 && cells.length === 0) ? (
+          ) : points.length === 0 ? (
             <div className="p-6">
               <EmptyState
                 title={mode === "moment" ? "No moment data here" : "No content in this window"}
@@ -287,10 +269,7 @@ export default function MapPage() {
             </div>
           ) : (
             <MapCanvas
-              view={view}
               points={points}
-              cells={cells}
-              cellSize={cellSize}
               topics={topicsMap}
               showHeat={showHeat}
               bounds={bounds}
@@ -298,7 +277,6 @@ export default function MapPage() {
               hoveredTopicId={hoveredTopicId}
               onHighlightScreen={setHighlightScreen}
               onRegionClick={onRegionClick}
-              terrainMode={terrainMode}
             />
           )}
         </div>
@@ -496,80 +474,13 @@ export default function MapPage() {
           <button
             data-testid="heat-toggle"
             onClick={() => setParam("heat", showHeat ? "0" : "1")}
-            disabled={is3D}
             className={`pointer-events-auto rounded-sm border hairline px-2.5 py-1.5 mono text-[11px] uppercase tracking-widest transition-colors ${
-              showHeat && !is3D ? "bg-secondary text-neutral-50" : "bg-background/85 text-muted-foreground hover:text-neutral-100"
-            } ${is3D ? "cursor-not-allowed opacity-40" : ""}`}
-            title={is3D ? "Heat field is 2D only — the terrain carries the signal in 3D" : "Toggle the heat field"}
+              showHeat ? "bg-secondary text-neutral-50" : "bg-background/85 text-muted-foreground hover:text-neutral-100"
+            }`}
+            title="Toggle the heat field"
           >
-            heat field {showHeat && !is3D ? "on" : "off"}
+            heat field {showHeat ? "on" : "off"}
           </button>
-
-          {/* 2D / 3D view toggle */}
-          <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
-            <button
-              data-testid="view-2d"
-              onClick={() => setParam("view", "")}
-              className={`inline-flex items-center gap-1 rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
-                view === "2d"
-                  ? "bg-secondary text-neutral-50"
-                  : "text-muted-foreground hover:text-neutral-100"
-              }`}
-              title="Flat semantic heat field"
-            >
-              <Layers className="h-3 w-3" />
-              2D
-            </button>
-            <button
-              data-testid="view-3d"
-              onClick={() => setParam("view", "3d")}
-              className={`inline-flex items-center gap-1 rounded-sm px-2 py-1 mono text-[11px] uppercase tracking-widest transition-colors ${
-                view === "3d"
-                  ? "bg-secondary text-neutral-50"
-                  : "text-muted-foreground hover:text-neutral-100"
-              }`}
-              title="Continuous topographic terrain · height = quantity · colour = heat · drag to rotate"
-            >
-              <Box className="h-3 w-3" />
-              3D
-            </button>
-          </div>
-
-          {/* Terrain metric swap — only meaningful in 3D. Toggles which
-              signal drives elevation vs colour so you can eyeball which
-              read tells the better story. */}
-          {is3D && (
-            <div
-              data-testid="terrain-mode"
-              className="pointer-events-auto inline-flex items-center rounded-sm border hairline bg-background/85 p-1 backdrop-blur"
-              title="Swap what the terrain and colour encode"
-            >
-              <button
-                data-testid="terrain-mode-count-heat"
-                onClick={() => setParam("terrain", "")}
-                className={`rounded-sm px-2 py-1 mono text-[10px] uppercase tracking-widest transition-colors ${
-                  terrainMode === "count-heat"
-                    ? "bg-secondary text-neutral-50"
-                    : "text-muted-foreground hover:text-neutral-100"
-                }`}
-                title="Elevation = quantity · Colour = heat"
-              >
-                ↕ qty · ▦ heat
-              </button>
-              <button
-                data-testid="terrain-mode-heat-count"
-                onClick={() => setParam("terrain", "heat-count")}
-                className={`rounded-sm px-2 py-1 mono text-[10px] uppercase tracking-widest transition-colors ${
-                  terrainMode === "heat-count"
-                    ? "bg-secondary text-neutral-50"
-                    : "text-muted-foreground hover:text-neutral-100"
-                }`}
-                title="Elevation = heat · Colour = quantity"
-              >
-                ↕ heat · ▦ qty
-              </button>
-            </div>
-          )}
 
           <button
             data-testid="copy-share-link"
@@ -630,21 +541,12 @@ export default function MapPage() {
               get notified
             </button>
             <div className="rounded-sm border hairline bg-background/85 px-2.5 py-1.5 backdrop-blur mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              {is3D ? (
-                <>
-                  <span className="text-neutral-200">{cells.length.toLocaleString()}</span> populated cells
-                  <span className="ml-2 text-neutral-500">/ 2500 lattice</span>
-                </>
-              ) : (
-                <>
-                  <span className="text-neutral-200">{points.length.toLocaleString()}</span> signals
-                  {mapQuery.data?.data?.reference_size ? (
-                    <span className="ml-2 text-neutral-500">
-                      / {mapQuery.data.data.reference_size.toLocaleString()} in scope
-                    </span>
-                  ) : null}
-                </>
-              )}
+              <span className="text-neutral-200">{points.length.toLocaleString()}</span> signals
+              {mapQuery.data?.data?.reference_size ? (
+                <span className="ml-2 text-neutral-500">
+                  / {mapQuery.data.data.reference_size.toLocaleString()} in scope
+                </span>
+              ) : null}
               {returnedMode === "moment" && (
                 <span className="ml-2 heat-2">moment</span>
               )}
