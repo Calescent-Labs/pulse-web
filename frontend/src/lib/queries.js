@@ -86,11 +86,66 @@ export function useMap({ window, asof, limit, mode, percentile, topic_id, aggreg
   });
 }
 
+// LocalStorage cache for the landing-hero timelapse. On repeat visits we
+// paint from cache immediately (<50ms) while React Query kicks off a
+// background refresh. Cache TTL matches the server's ~1h recompute; a
+// slightly stale hero heat is fine, and the fresh data swaps in on arrival.
+const TIMELAPSE_CACHE_KEY = "pulse:timelapse:v1";
+const TIMELAPSE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+function readTimelapseCache() {
+  try {
+    if (typeof localStorage === "undefined") return undefined;
+    const raw = localStorage.getItem(TIMELAPSE_CACHE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.data || !parsed.ts) return undefined;
+    if (Date.now() - parsed.ts > TIMELAPSE_CACHE_TTL_MS) return undefined;
+    return parsed.data;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeTimelapseCache(data) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(
+      TIMELAPSE_CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), data }),
+    );
+  } catch {
+    /* quota exceeded / private mode — silent */
+  }
+}
+
 export function useMapTimelapse({ days = 7, resolution = "4h", grid = 40, window } = {}) {
   const { apiKey, tier } = useTier();
+  const isDefault = days === 7 && resolution === "4h" && grid === 40 && !window;
   return useQuery({
     queryKey: ["timelapse", { days, resolution, grid, window, tier }],
-    queryFn: ({ signal }) => getMapTimelapse({ days, resolution, grid, window, apiKey, signal }),
+    queryFn: async ({ signal }) => {
+      const data = await getMapTimelapse({ days, resolution, grid, window, apiKey, signal });
+      // Only cache the canonical hero payload — other param combos would
+      // thrash the single-slot cache with no benefit.
+      if (isDefault && data) writeTimelapseCache(data);
+      return data;
+    },
+    // Instant-paint from localStorage on repeat visits; RQ will still
+    // background-refresh because staleTime says the cache is stale.
+    initialData: isDefault ? readTimelapseCache : undefined,
+    initialDataUpdatedAt: () => {
+      if (!isDefault) return undefined;
+      try {
+        const raw =
+          typeof localStorage !== "undefined" && localStorage.getItem(TIMELAPSE_CACHE_KEY);
+        if (!raw) return undefined;
+        const parsed = JSON.parse(raw);
+        return parsed?.ts;
+      } catch {
+        return undefined;
+      }
+    },
     enabled: Boolean(apiKey),
     // Precomputed once per hour server-side — a longer stale window is fine.
     staleTime: 5 * 60_000,

@@ -253,9 +253,36 @@ export function getMap({
 /**
  * GET /v1/map/timelapse — precomputed animation frames.
  * `data.frames[i].cells[y][x]` is a normalised 0–1 density grid.
+ *
+ * When called with the default landing-hero params, we short-circuit to
+ * the fetch that `public/index.html` fires during HTML parse. That saves
+ * 1-3s off first paint because we don't wait for React + libs to bundle-
+ * parse before the network round-trip begins.
+ *
  * @param {{days?:number, resolution?:'hourly'|'4h'|'daily', grid?:number, window?:'24h'|'72h'|'7d'|'30d', apiKey:string, signal?:AbortSignal}} opts
  */
 export function getMapTimelapse({ days = 7, resolution = "4h", grid = 40, window: win = "24h", apiKey, signal }) {
+  const isDefault =
+    days === 7 && resolution === "4h" && grid === 40 && win === "24h";
+  if (
+    isDefault &&
+    typeof window !== "undefined" &&
+    window.__PULSE_TIMELAPSE_PROMISE__
+  ) {
+    const p = window.__PULSE_TIMELAPSE_PROMISE__;
+    // Consume it once — subsequent refetches (staleTime expiry, etc.) go
+    // through the normal fetch path.
+    window.__PULSE_TIMELAPSE_PROMISE__ = null;
+    return p.then((data) => {
+      if (data) return data;
+      // Prefetch failed — fall back to a normal request.
+      return request("/v1/map/timelapse", {
+        params: { days, resolution, grid, window: win },
+        apiKey,
+        signal,
+      });
+    });
+  }
   return request("/v1/map/timelapse", {
     params: { days, resolution, grid, window: win },
     apiKey,

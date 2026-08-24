@@ -44,5 +44,34 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script>
+      // Pre-fetch the landing hero timelapse during HTML parse, before the
+      // React bundle even downloads. Saves 1-3s off first paint on cold
+      // staging tunnels. The React app picks up window.__PULSE_TIMELAPSE_PROMISE__
+      // in src/lib/pulseClient.js -> getMapTimelapse.
+      (function () {
+        try {
+          var apiBase = "%REACT_APP_PULSE_API_BASE%";
+          var apiKey = "%REACT_APP_PULSE_KEY_FREE%";
+          // Guard against unsubstituted placeholders (missing env at build time).
+          if (!apiBase || !apiKey || apiBase.charAt(0) === "%" || apiKey.charAt(0) === "%") {
+            return;
+          }
+          var url = apiBase + "/v1/map/timelapse?days=7&resolution=4h&grid=40&window=24h";
+          window.__PULSE_TIMELAPSE_PROMISE__ = fetch(url, {
+            headers: { "X-API-Key": apiKey, Accept: "application/json" },
+          })
+            .then(function (r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            })
+            .catch(function () {
+              return null;
+            });
+        } catch (e) {
+          /* no-op — React will fall back to a normal fetch */
+        }
+      })();
+    </script>
   </body>
 </html>

@@ -1,173 +1,59 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Radio, Sparkles } from "lucide-react";
-import DeckGL from "@deck.gl/react";
-import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import { OrthographicView } from "@deck.gl/core";
 import { AppShell } from "../components/AppShell";
 import { HeatBadge } from "../components/HeatBadge";
 import { StatusChip } from "../components/StatusChip";
 import { NoKeyState } from "../components/NoKeyState";
-import { useHealth, useMapTimelapse, useTopics } from "../lib/queries";
-import { HEATMAP_COLOR_RANGE } from "../lib/heat";
+import { useHealth, useTopics } from "../lib/queries";
 import { formatRelativeFromISO, safeName } from "../lib/format";
 
-const OVIEW = new OrthographicView({ id: "landing-ortho", controller: false });
+// Code-split the deck.gl-heavy timelapse layer out of the main bundle so
+// the hero paint (background, fallback bloom, copy) doesn't have to wait
+// for @deck.gl/aggregation-layers to parse. The static <HeroFallback />
+// stands in until this chunk is ready and the timelapse data arrives.
+//
+// `webpackPrefetch: true` emits `<link rel="prefetch">` so the browser
+// pulls this chunk during idle time after the main bundle paints —
+// closing the gap between HeroFallback paint and timelapse swap-in.
+const AmbientHeat = lazy(() =>
+  import(/* webpackPrefetch: true */ "../components/AmbientHeat"),
+);
 
 /**
- * Ambient hero heat — a 7-day timelapse loop of the semantic map.
- *
- * Consumes GET /v1/map/timelapse (4h resolution, 42 frames, ~11KB gzipped).
- * Each frame carries a normalised 0–1 density grid; we project cell centres
- * once from the returned bounds and swap the HeatmapLayer's data per tick.
- *
- * Frame cadence: 220ms per frame ≈ 9s loop. The animation loops
- * oldest → newest, then restarts. The procedural bloom underneath stays
- * visible until the first real frame paints, keeping first paint <1s
- * even on cold tunnels.
+ * HeroFallback — three drifting radial-gradient orbs. Lives in the main
+ * bundle so it paints within a few hundred ms of navigation, before deck.gl
+ * or the timelapse fetch resolves. AmbientHeat renders on top once ready
+ * and its opaque canvas covers this fallback.
  */
-function AmbientHeat({ settled = false }) {
-  const q = useMapTimelapse({ days: 7, resolution: "4h", grid: 40 });
-  const payload = q.data?.data;
-  const frames = payload?.frames || [];
-  const bounds = payload?.bounds || null;
-  const gridSize = payload?.grid_size || 40;
-
-  // Precomputed cell centres — coordinate space is fixed across frames,
-  // so we only need to compute this once per timelapse payload.
-  const cellCentres = useMemo(() => {
-    if (!bounds) return null;
-    const cellW = (bounds.maxX - bounds.minX) / gridSize;
-    const cellH = (bounds.maxY - bounds.minY) / gridSize;
-    const centres = new Array(gridSize);
-    for (let y = 0; y < gridSize; y++) {
-      centres[y] = new Array(gridSize);
-      for (let x = 0; x < gridSize; x++) {
-        centres[y][x] = [bounds.minX + (x + 0.5) * cellW, bounds.minY + (y + 0.5) * cellH];
-      }
-    }
-    return { centres, cellW, cellH };
-  }, [bounds, gridSize]);
-
-  const [frameIdx, setFrameIdx] = useState(0);
-  useEffect(() => {
-    if (!frames.length) return;
-    const id = setInterval(() => {
-      setFrameIdx((i) => (i + 1) % frames.length);
-    }, 220);
-    return () => clearInterval(id);
-  }, [frames.length]);
-
-  // Convert current frame's 2D density grid → weighted points for the layer.
-  const heatData = useMemo(() => {
-    if (!frames.length || !cellCentres) return [];
-    const frame = frames[frameIdx] || frames[0];
-    const cells = frame.cells || [];
-    const out = [];
-    for (let y = 0; y < cells.length; y++) {
-      const row = cells[y];
-      if (!row) continue;
-      for (let x = 0; x < row.length; x++) {
-        const w = row[x];
-        // Threshold prunes the noise floor so the smoothing kernel stays crisp.
-        if (!w || w < 0.02) continue;
-        const c = cellCentres.centres[y]?.[x];
-        if (c) out.push({ position: c, weight: w });
-      }
-    }
-    return out;
-  }, [frames, frameIdx, cellCentres]);
-
-  const initialViewState = useMemo(() => {
-    if (!bounds) return { target: [0, 0, 0], zoom: 5 };
-    const cx = (bounds.minX + bounds.maxX) / 2;
-    const cy = (bounds.minY + bounds.maxY) / 2;
-    return { target: [cx, cy, 0], zoom: 5.4 };
-  }, [bounds]);
-
-  const layers = useMemo(() => {
-    if (!heatData.length) return [];
-    return [
-      new HeatmapLayer({
-        id: "hero-atmosphere",
-        data: heatData,
-        getPosition: (d) => d.position,
-        getWeight: (d) => d.weight,
-        radiusPixels: 220,
-        intensity: 1.0,
-        threshold: 0.02,
-        colorRange: HEATMAP_COLOR_RANGE,
-        aggregation: "SUM",
-        opacity: 0.45,
-        pickable: false,
-        updateTriggers: { getWeight: [frameIdx], getPosition: [frameIdx] },
-      }),
-      new HeatmapLayer({
-        id: "hero-focus",
-        data: heatData,
-        getPosition: (d) => d.position,
-        getWeight: (d) => d.weight,
-        radiusPixels: 110,
-        intensity: 1.7,
-        threshold: 0.06,
-        colorRange: HEATMAP_COLOR_RANGE,
-        aggregation: "SUM",
-        opacity: 0.9,
-        pickable: false,
-        updateTriggers: { getWeight: [frameIdx], getPosition: [frameIdx] },
-      }),
-    ];
-  }, [heatData, frameIdx]);
-
-  const currentFrame = frames[frameIdx];
-  const frameStamp = currentFrame?.asof;
-
+function HeroFallback() {
   return (
     <div
-      data-testid="ambient-heat"
+      data-testid="hero-fallback"
       aria-hidden="true"
-      className="absolute inset-0 overflow-hidden"
+      className="absolute inset-0 overflow-hidden pointer-events-none"
       style={{ background: "#0a0d13" }}
     >
-      {/* Animated heat visual — the fallback bloom and the deck.gl canvas
-          shift together so the left column clears for the copy. Vignettes
-          and the timelapse watermark stay put so the watermark can never
-          slide out of view. */}
       <div
-        className="absolute inset-0 transition-transform duration-[1600ms] ease-out"
+        className="absolute -left-40 top-20 h-[520px] w-[520px] rounded-full blur-3xl hero-bloom-a"
         style={{
-          transform: settled ? "translate3d(11%, 0, 0)" : "translate3d(0, 0, 0)",
-          willChange: "transform",
+          background: "radial-gradient(circle, hsl(268,65%,50%,0.55) 0%, transparent 70%)",
         }}
-      >
-        {/* Procedural fallback bloom — visible immediately, hidden once real
-            data paints. Keeps landing paint <1s even on cold tunnels. */}
-        <div
-          className={`absolute inset-0 transition-opacity duration-1000 ${
-            heatData.length ? "opacity-0" : "opacity-100"
-          }`}
-        >
-          <div className="absolute -left-40 top-20 h-[520px] w-[520px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(268,65%,50%,0.55) 0%, transparent 70%)" }} />
-          <div className="absolute right-10 top-40 h-[420px] w-[420px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(25,95%,55%,0.5) 0%, transparent 70%)" }} />
-          <div className="absolute left-1/3 bottom-8 h-[380px] w-[380px] rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsl(340,78%,55%,0.45) 0%, transparent 70%)" }} />
-        </div>
-
-        <div
-          className={`absolute inset-0 transition-opacity duration-1000 ${
-            heatData.length ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          <DeckGL
-            views={OVIEW}
-            initialViewState={initialViewState}
-            controller={false}
-            layers={layers}
-            style={{ position: "absolute", inset: 0 }}
-          />
-        </div>
-      </div>
-
-      {/* Vignette so foreground copy stays legible */}
+      />
+      <div
+        className="absolute right-10 top-40 h-[420px] w-[420px] rounded-full blur-3xl hero-bloom-b"
+        style={{
+          background: "radial-gradient(circle, hsl(25,95%,55%,0.5) 0%, transparent 70%)",
+        }}
+      />
+      <div
+        className="absolute left-1/3 bottom-8 h-[380px] w-[380px] rounded-full blur-3xl hero-bloom-c"
+        style={{
+          background: "radial-gradient(circle, hsl(340,78%,55%,0.45) 0%, transparent 70%)",
+        }}
+      />
+      {/* Vignettes match AmbientHeat's — legibility should not change when
+          the deck.gl chunk swaps in. */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -182,26 +68,10 @@ function AmbientHeat({ settled = false }) {
             "linear-gradient(to bottom, rgba(14,17,23,0.35) 0%, rgba(14,17,23,0) 30%, rgba(14,17,23,0) 65%, rgba(14,17,23,0.7) 100%)",
         }}
       />
-
-      {/* Timelapse watermark — barely there, mono, corner-anchored. */}
-      {frames.length > 0 && frameStamp && (
-        <div
-          data-testid="timelapse-stamp"
-          className="pointer-events-none absolute bottom-4 right-4 z-[5] rounded-sm border hairline bg-background/50 px-2 py-1 mono text-[9px] uppercase tracking-[0.24em] text-neutral-400 backdrop-blur"
-        >
-          <span className="text-[hsl(25,95%,60%)]">◉</span>{" "}
-          <span className="text-neutral-300">timelapse</span>{" "}
-          <span className="text-neutral-500">·</span>{" "}
-          {new Date(frameStamp).toISOString().replace("T", " ").slice(0, 13)}h UTC
-          <span className="text-neutral-500">
-            {" "}
-            · frame {frameIdx + 1}/{frames.length}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
+
 
 function LiveHealthPill() {
   const { data } = useHealth();
@@ -500,9 +370,14 @@ export default function LandingPage() {
           data-testid="hero"
           className="relative flex min-h-[calc(100vh-104px)] items-center overflow-hidden"
         >
-          {/* Timelapse — the shift lives inside AmbientHeat now so its
-              corner watermark stays anchored to the hero's right edge. */}
-          <AmbientHeat settled={settled} />
+          {/* Static fallback bloom — main bundle, paints immediately. */}
+          <HeroFallback />
+          {/* Real timelapse — code-split. Suspense fallback is null because
+              HeroFallback is already visible as a sibling. AmbientHeat fades
+              its own canvas in once data arrives. */}
+          <Suspense fallback={null}>
+            <AmbientHeat settled={settled} />
+          </Suspense>
 
           <div
             className={`relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 transition-[opacity,transform] duration-[1600ms] ease-out ${
