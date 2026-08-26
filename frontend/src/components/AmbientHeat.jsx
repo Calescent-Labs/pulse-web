@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import DeckGL from "@deck.gl/react";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import { OrthographicView } from "@deck.gl/core";
@@ -20,12 +20,23 @@ const OVIEW = new OrthographicView({ id: "landing-ortho", controller: false });
  * cell centres once from the returned bounds and swap the HeatmapLayer's
  * data per tick. Frame cadence: 220ms per frame ≈ 9s loop.
  */
-export default function AmbientHeat({ settled = false }) {
+export default function AmbientHeat({ settled = false, onDataReady }) {
   const q = useMapTimelapse({ days: 7, resolution: "4h", grid: 40 });
   const payload = q.data?.data;
   const frames = payload?.frames || [];
   const bounds = payload?.bounds || null;
   const gridSize = payload?.grid_size || 40;
+
+  // Fire once the moment we have real frames to render. The parent uses
+  // this to trigger the settle animation (heat drifts right, copy left)
+  // ONLY after the timelapse has actually painted — not on a fixed timer.
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (notifiedRef.current) return;
+    if (!frames.length) return;
+    notifiedRef.current = true;
+    if (typeof onDataReady === "function") onDataReady();
+  }, [frames.length, onDataReady]);
 
   // Precomputed cell centres — coordinate space is fixed across frames,
   // so we only need to compute this once per timelapse payload.

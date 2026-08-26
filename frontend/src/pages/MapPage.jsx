@@ -84,7 +84,7 @@ function MapHint() {
   return (
     <div
       data-testid="map-hint"
-      className="pointer-events-auto absolute top-14 left-3 z-10 max-w-[320px] rounded-sm border hairline bg-background/90 px-3 py-2 backdrop-blur"
+      className="pointer-events-auto absolute top-14 left-3 z-10 hidden max-w-[320px] rounded-sm border hairline bg-background/90 px-3 py-2 backdrop-blur sm:block"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)]">

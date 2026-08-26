@@ -353,14 +353,18 @@ export default function LandingPage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // "Settle" animation — after the initial fade-in, ease the text block a
-  // touch left and drift the timelapse a bit right so they stop stacking
-  // over one another. Kicks in ~700ms after paint so the fade lands first.
+  // Settle animation now fires ONLY after the timelapse has actually
+  // rendered its first frame — the shift (heat drifts right, copy drifts
+  // left) reads as "the map has arrived, let's clear the way for it"
+  // rather than a fixed timer. A small 400ms buffer lets the fade-in
+  // animation finish smoothly before the transform kicks in.
+  const [timelapseReady, setTimelapseReady] = useState(false);
   const [settled, setSettled] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setSettled(true), 700);
+    if (!timelapseReady) return;
+    const t = setTimeout(() => setSettled(true), 400);
     return () => clearTimeout(t);
-  }, []);
+  }, [timelapseReady]);
 
   return (
     <AppShell dense>
@@ -376,7 +380,7 @@ export default function LandingPage() {
               HeroFallback is already visible as a sibling. AmbientHeat fades
               its own canvas in once data arrives. */}
           <Suspense fallback={null}>
-            <AmbientHeat settled={settled} />
+            <AmbientHeat settled={settled} onDataReady={() => setTimelapseReady(true)} />
           </Suspense>
 
           <div
@@ -389,50 +393,63 @@ export default function LandingPage() {
             }}
           >
             <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2.5 py-1 mono text-[10px] uppercase tracking-[0.22em] text-neutral-300 backdrop-blur">
-                <Sparkles className="h-3 w-3 text-[hsl(25,95%,60%)]" />
-                the internet at a glance
+              <div
+                data-testid="hero-block-1"
+                className="hero-fade hero-fade-1"
+              >
+                <div className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2.5 py-1 mono text-[10px] uppercase tracking-[0.22em] text-neutral-300 backdrop-blur">
+                  <Sparkles className="h-3 w-3 text-[hsl(25,95%,60%)]" />
+                  the internet at a glance
+                </div>
+
+                <h1
+                  data-testid="hero-title"
+                  className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-neutral-50"
+                  style={{ letterSpacing: "-0.03em", lineHeight: 1.02 }}
+                >
+                  The internet,
+                  <br />
+                  <span className="heat-3">before it's obvious.</span>
+                </h1>
               </div>
 
-              <h1
-                data-testid="hero-title"
-                className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-neutral-50"
-                style={{ letterSpacing: "-0.03em", lineHeight: 1.02 }}
+              <p
+                data-testid="hero-block-2"
+                className="hero-fade hero-fade-2 mt-5 max-w-xl text-base sm:text-lg leading-relaxed text-neutral-300"
               >
-                The internet,
-                <br />
-                <span className="heat-3">before it's obvious.</span>
-              </h1>
-
-              <p className="mt-5 max-w-xl text-base sm:text-lg leading-relaxed text-neutral-300">
                 Pulse scans where audiences are gathering across the open web and surfaces
                 what's actually catching fire — in one place, in one glance. Click any hotspot,
                 see the real content behind it, and open it at its source. No five-tab
                 app-hopping.
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <button
-                  data-testid="cta-open-map"
-                  onClick={() => navigate("/map")}
-                  className="inline-flex items-center gap-2 rounded-sm bg-[hsl(25,95%,60%)] px-4 py-2.5 text-sm font-medium text-[hsl(220,15%,7%)] transition-transform hover:translate-y-[-1px]"
-                >
-                  Open the map
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-                <Link
-                  to="/trending"
-                  data-testid="cta-see-trending"
-                  className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-4 py-2.5 text-sm text-neutral-100 backdrop-blur transition-colors hover:bg-secondary"
-                >
-                  See what's trending
-                </Link>
-                <LiveHealthPill />
-              </div>
+              <div
+                data-testid="hero-block-3"
+                className="hero-fade hero-fade-3"
+              >
+                <div className="mt-8 flex flex-wrap items-center gap-3">
+                  <button
+                    data-testid="cta-open-map"
+                    onClick={() => navigate("/map")}
+                    className="inline-flex items-center gap-2 rounded-sm bg-[hsl(25,95%,60%)] px-4 py-2.5 text-sm font-medium text-[hsl(220,15%,7%)] transition-transform hover:translate-y-[-1px]"
+                  >
+                    Open the map
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <Link
+                    to="/trending"
+                    data-testid="cta-see-trending"
+                    className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-4 py-2.5 text-sm text-neutral-100 backdrop-blur transition-colors hover:bg-secondary"
+                  >
+                    See what's trending
+                  </Link>
+                  <LiveHealthPill />
+                </div>
 
-              <p className="mt-5 mono text-[10px] uppercase tracking-widest text-neutral-500">
-                heat behind · 7-day timelapse · 4h frames · loops continuously
-              </p>
+                <p className="mt-5 mono text-[10px] uppercase tracking-widest text-neutral-500">
+                  heat behind · 7-day timelapse · 4h frames · loops continuously
+                </p>
+              </div>
             </div>
           </div>
 

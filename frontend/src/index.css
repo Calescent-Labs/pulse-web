@@ -151,6 +151,26 @@ code,
     .hero-bloom-a, .hero-bloom-b, .hero-bloom-c { animation: none; }
 }
 
+/* Landing hero text — staggered fade-in so the copy earns the user's
+   attention while the timelapse chunk downloads and the API round-trip
+   completes. Three blocks (H1, paragraph, CTAs) fade in sequentially
+   over ~5 seconds. */
+@keyframes hero-fade-in {
+    from { opacity: 0; transform: translate3d(0, 12px, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.hero-fade {
+    opacity: 0;
+    animation: hero-fade-in 1.2s ease-out forwards;
+    will-change: opacity, transform;
+}
+.hero-fade-1 { animation-delay: 0.2s; }
+.hero-fade-2 { animation-delay: 1.6s; animation-duration: 1.4s; }
+.hero-fade-3 { animation-delay: 3.4s; animation-duration: 1.4s; }
+@media (prefers-reduced-motion: reduce) {
+    .hero-fade { opacity: 1; animation: none; transform: none; }
+}
+
 /* Custom range slider — used for scrubber */
 input[type="range"].scrubber {
     -webkit-appearance: none;
