@@ -96,13 +96,19 @@
 
 const BASE_URL = (process.env.REACT_APP_PULSE_API_BASE || "").replace(/\/+$/, "");
 
-/** Error thrown for 402 pro_required responses — treated as a UI state. */
+/** Error thrown for 402 pro_required responses — treated as a UI state.
+ *  Backend v1.3+ enriches the 402 body with:
+ *    - authenticated (bool): is the caller signed in?
+ *    - action ('sign_in' | 'subscribe'): what the client should offer next.
+ *  Both are surfaced on the error so the UI can route to the right screen. */
 export class PulseLockedError extends Error {
-  constructor(feature, message) {
+  constructor(feature, message, { authenticated = false, action = "sign_in" } = {}) {
     super(message || `Pro feature required: ${feature}`);
     this.name = "PulseLockedError";
     this.code = 402;
     this.feature = feature || "this capability";
+    this.authenticated = authenticated;
+    this.action = action;
   }
 }
 
@@ -154,12 +160,19 @@ function buildUrl(path, params) {
   return url.toString();
 }
 
+import { getClerkToken } from "./clerkBridge";
+
 async function request(path, { params, apiKey, signal } = {}) {
   if (!BASE_URL) {
     throw new PulseApiError(0, "REACT_APP_PULSE_API_BASE is not configured");
   }
   const headers = { Accept: "application/json" };
+  // Anonymous visitors keep sending X-API-Key. Signed-in users additionally
+  // send a Clerk bearer token — backend prefers the bearer when both are
+  // present, so we always attach both when available.
   if (apiKey) headers["X-API-Key"] = apiKey;
+  const bearer = await getClerkToken();
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
 
   const res = await fetch(buildUrl(path, params), { headers, signal });
 
@@ -175,9 +188,14 @@ async function request(path, { params, apiKey, signal } = {}) {
   const detail = body && body.detail;
   if (res.status === 401) throw new PulseAuthError(typeof detail === "string" ? detail : undefined);
   if (res.status === 402) {
-    const feature = detail && typeof detail === "object" ? detail.feature : "this capability";
-    const message = detail && typeof detail === "object" ? detail.message : undefined;
-    throw new PulseLockedError(feature, message);
+    // Backend v1.3+ enriches 402 with authenticated + action. Fall back to
+    // safe defaults if an older API version answers.
+    const info = detail && typeof detail === "object" ? detail : {};
+    const feature = info.feature || "this capability";
+    const message = info.message;
+    const authenticated = Boolean(info.authenticated);
+    const action = info.action === "subscribe" ? "subscribe" : "sign_in";
+    throw new PulseLockedError(feature, message, { authenticated, action });
   }
   if (res.status === 429) throw new PulseRateLimitError();
   if (res.status === 503) throw new PulseDegradedError();

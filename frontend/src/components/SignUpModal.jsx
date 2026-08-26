@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useState } from "react";
 import { Sparkles, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
+import { useClerkAvailability } from "../lib/useClerkAvailability";
 
 const PRO_FEATURES = [
   { key: "time travel", text: "Time travel — scrub the map back 30 days." },
@@ -47,11 +49,36 @@ const SignUpContext = createContext(null);
 export function SignUpProvider({ children }) {
   const [open, setOpen] = useState(false);
   const [triggerFeature, setTriggerFeature] = useState(null);
+  const { clerkEnabled, isSignedIn, openSignIn } = useClerkAvailability();
+  const navigate = useNavigate();
 
-  const openModal = useCallback((feature) => {
-    setTriggerFeature(feature || null);
-    setOpen(true);
-  }, []);
+  /**
+   * open(feature) — the single "user hit a Pro locked feature" trigger.
+   *
+   * Routing (in order of priority):
+   *   1. If Clerk is wired AND the user is signed in → jump straight to
+   *      /upgrade (the "Pro coming soon" pane); no modal needed.
+   *   2. If Clerk is wired AND the user is signed out → open the Clerk
+   *      sign-in/sign-up modal directly (the platform's real modal).
+   *   3. If Clerk isn't wired (no publishable key) → fall back to the
+   *      static "notify me" placeholder modal below, preserving the
+   *      previous behaviour so removing the key never breaks the flow.
+   */
+  const openModal = useCallback(
+    (feature) => {
+      setTriggerFeature(feature || null);
+      if (clerkEnabled) {
+        if (isSignedIn) {
+          navigate("/upgrade");
+          return;
+        }
+        const opened = openSignIn();
+        if (opened) return;
+      }
+      setOpen(true);
+    },
+    [clerkEnabled, isSignedIn, openSignIn, navigate],
+  );
   const closeModal = useCallback(() => setOpen(false), []);
 
   return (

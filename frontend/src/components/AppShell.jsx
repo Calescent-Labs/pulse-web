@@ -1,8 +1,10 @@
 import React from "react";
 import { Link, NavLink } from "react-router-dom";
-import { Activity, AlertTriangle } from "lucide-react";
+import { Activity, AlertTriangle, LogIn } from "lucide-react";
+import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
 import { useHealth } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
+import { useClerkAvailability } from "../lib/useClerkAvailability";
 import { formatRelativeFromISO, isStale } from "../lib/format";
 import { Disclaimer } from "./Disclaimer";
 
@@ -70,6 +72,45 @@ const NAV = [
   { to: "/trending", label: "Trending", id: "nav-trending" },
 ];
 
+/**
+ * AuthChrome — the top-nav sign-in / user-button block.
+ *
+ * Only renders when Clerk is wired (publishable key present). When
+ * signed out shows a plain "sign in" button that opens the Clerk modal
+ * (which also has the "create account" tab). When signed in shows
+ * Clerk's UserButton (avatar → menu with account / sign-out).
+ */
+function AuthChrome() {
+  const { clerkEnabled, openSignIn } = useClerkAvailability();
+  if (!clerkEnabled) return null;
+  return (
+    <>
+      <SignedOut>
+        <button
+          data-testid="nav-sign-in"
+          onClick={() => openSignIn()}
+          className="inline-flex items-center gap-1.5 rounded-sm border hairline bg-background/60 px-2.5 py-1 mono text-[11px] uppercase tracking-[0.16em] text-neutral-200 hover:bg-secondary hover:text-neutral-100"
+        >
+          <LogIn className="h-3 w-3" />
+          sign in
+        </button>
+      </SignedOut>
+      <SignedIn>
+        <div data-testid="nav-user-button" className="flex items-center">
+          <UserButton
+            afterSignOutUrl="/"
+            appearance={{
+              elements: {
+                userButtonAvatarBox: "h-7 w-7",
+              },
+            }}
+          />
+        </div>
+      </SignedIn>
+    </>
+  );
+}
+
 export function AppShell({ children, disclaimer, dense = false }) {
   return (
     <div className="flex min-h-screen flex-col">
@@ -115,6 +156,7 @@ export function AppShell({ children, disclaimer, dense = false }) {
         <div className="flex items-center gap-3">
           <HealthIndicator />
           <TierToggle />
+          <AuthChrome />
         </div>
       </header>
 

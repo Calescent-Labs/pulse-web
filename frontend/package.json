@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.3",
     "@deck.gl/aggregation-layers": "^9.3.10",
     "@deck.gl/core": "^9.3.10",
     "@deck.gl/layers": "^9.3.10",
