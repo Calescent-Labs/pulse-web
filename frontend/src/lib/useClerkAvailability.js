@@ -31,9 +31,7 @@ export function useClerkAvailability() {
     try {
       clerk.openSignIn({
         withSignUp: true,
-        redirectUrl: redirectUrlAfter,
-        afterSignInUrl: redirectUrlAfter,
-        afterSignUpUrl: redirectUrlAfter,
+        fallbackRedirectUrl: redirectUrlAfter,
       });
       return true;
     } catch {
