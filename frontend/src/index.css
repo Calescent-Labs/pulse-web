@@ -150,6 +150,15 @@ code,
 @media (prefers-reduced-motion: reduce) {
     .hero-bloom-a, .hero-bloom-b, .hero-bloom-c { animation: none; }
 }
+/* Freeze the fallback blooms on mobile — three 380-520px orbs with 64px
+   CSS blur repainting per frame is the largest paint cost on phone GPUs.
+   The gradients still look correct as static art. Desktop unchanged. */
+@media (max-width: 640px) {
+    .hero-bloom-a, .hero-bloom-b, .hero-bloom-c {
+        animation: none;
+        will-change: auto;
+    }
+}
 
 /* Landing hero text — staggered fade-in so the copy earns the user's
    attention while the timelapse chunk downloads and the API round-trip

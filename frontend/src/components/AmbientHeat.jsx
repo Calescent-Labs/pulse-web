@@ -20,7 +20,32 @@ const OVIEW = new OrthographicView({ id: "landing-ortho", controller: false });
  * cell centres once from the returned bounds and swap the HeatmapLayer's
  * data per tick. Frame cadence: 220ms per frame ≈ 9s loop.
  */
+// Mobile perf lever — the hero was pushing four expensive things onto
+// phone GPUs in parallel (blurred blooms, two heatmap layers, a 220ms
+// aggregation swap, and composite transitions). On mobile we run a
+// leaner variant: single heatmap layer, 800ms cadence, fewer higher-
+// signal points, and we skip the settle transform. Desktop is untouched.
+function useIsMobileHero() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(max-width: 640px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(max-width: 640px)");
+    const handler = (e) => setIsMobile(e.matches);
+    if (mql.addEventListener) mql.addEventListener("change", handler);
+    else mql.addListener(handler);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", handler);
+      else mql.removeListener(handler);
+    };
+  }, []);
+  return isMobile;
+}
+
 export default function AmbientHeat({ settled = false, onDataReady }) {
+  const isMobile = useIsMobileHero();
   const q = useMapTimelapse({ days: 7, resolution: "4h", grid: 40 });
   const payload = q.data?.data;
   const frames = payload?.frames || [];
@@ -57,30 +82,42 @@ export default function AmbientHeat({ settled = false, onDataReady }) {
   const [frameIdx, setFrameIdx] = useState(0);
   useEffect(() => {
     if (!frames.length) return;
+    // Mobile: 800ms cadence reads as calm ambient motion and cuts
+    // heatmap re-aggregation from ~4.5/s down to ~1.25/s — the single
+    // biggest win. Desktop stays at the original 220ms.
+    const interval = isMobile ? 800 : 220;
     const id = setInterval(() => {
       setFrameIdx((i) => (i + 1) % frames.length);
-    }, 220);
+    }, interval);
     return () => clearInterval(id);
-  }, [frames.length]);
+  }, [frames.length, isMobile]);
 
   // Convert current frame's 2D density grid → weighted points for the layer.
+  // On mobile we raise the density threshold and cap the point count so
+  // the layer aggregates fewer, higher-signal points per swap.
   const heatData = useMemo(() => {
     if (!frames.length || !cellCentres) return [];
     const frame = frames[frameIdx] || frames[0];
     const cells = frame.cells || [];
+    const minWeight = isMobile ? 0.12 : 0.02;
     const out = [];
     for (let y = 0; y < cells.length; y++) {
       const row = cells[y];
       if (!row) continue;
       for (let x = 0; x < row.length; x++) {
         const w = row[x];
-        if (!w || w < 0.02) continue;
+        if (!w || w < minWeight) continue;
         const c = cellCentres.centres[y]?.[x];
         if (c) out.push({ position: c, weight: w });
       }
     }
+    // Cap at ~600 points on mobile (down from ~1,600 unfiltered).
+    if (isMobile && out.length > 600) {
+      out.sort((a, b) => b.weight - a.weight);
+      out.length = 600;
+    }
     return out;
-  }, [frames, frameIdx, cellCentres]);
+  }, [frames, frameIdx, cellCentres, isMobile]);
 
   const initialViewState = useMemo(() => {
     if (!bounds) return { target: [0, 0, 0], zoom: 5 };
@@ -91,6 +128,27 @@ export default function AmbientHeat({ settled = false, onDataReady }) {
 
   const layers = useMemo(() => {
     if (!heatData.length) return [];
+    // Mobile: single heatmap pass. The wide 220px atmosphere layer is
+    // dropped; we bump the focus radius slightly to preserve the warm-
+    // map read without a second aggregation per swap.
+    if (isMobile) {
+      return [
+        new HeatmapLayer({
+          id: "hero-focus",
+          data: heatData,
+          getPosition: (d) => d.position,
+          getWeight: (d) => d.weight,
+          radiusPixels: 140,
+          intensity: 1.5,
+          threshold: 0.06,
+          colorRange: HEATMAP_COLOR_RANGE,
+          aggregation: "SUM",
+          opacity: 0.9,
+          pickable: false,
+          updateTriggers: { getWeight: [frameIdx], getPosition: [frameIdx] },
+        }),
+      ];
+    }
     return [
       new HeatmapLayer({
         id: "hero-atmosphere",
@@ -121,7 +179,7 @@ export default function AmbientHeat({ settled = false, onDataReady }) {
         updateTriggers: { getWeight: [frameIdx], getPosition: [frameIdx] },
       }),
     ];
-  }, [heatData, frameIdx]);
+  }, [heatData, frameIdx, isMobile]);
 
   const currentFrame = frames[frameIdx];
   const frameStamp = currentFrame?.asof;
@@ -139,8 +197,12 @@ export default function AmbientHeat({ settled = false, onDataReady }) {
           heatData.length ? "opacity-100" : "opacity-0"
         }`}
         style={{
-          transform: settled ? "translate3d(11%, 0, 0)" : "translate3d(0, 0, 0)",
-          willChange: "transform",
+          // Skip the settle drift on mobile — on a 390px column the
+          // shift has no visual room to matter and it competes with
+          // the timelapse loop for the same compositor frame budget.
+          transform:
+            settled && !isMobile ? "translate3d(11%, 0, 0)" : "translate3d(0, 0, 0)",
+          willChange: isMobile ? "auto" : "transform",
         }}
       >
         <DeckGL

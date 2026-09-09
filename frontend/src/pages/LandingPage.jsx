@@ -345,6 +345,26 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const hasKey = Boolean(process.env.REACT_APP_PULSE_KEY_FREE);
 
+  // Mobile viewport check — mirrors AmbientHeat. On mobile we skip the
+  // hero settle transform on the copy column; the shift has no visual
+  // room on a 390px viewport and competes for compositor frames with
+  // the timelapse loop. Desktop unchanged.
+  const [isMobileHero, setIsMobileHero] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(max-width: 640px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(max-width: 640px)");
+    const handler = (e) => setIsMobileHero(e.matches);
+    if (mql.addEventListener) mql.addEventListener("change", handler);
+    else mql.addListener(handler);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", handler);
+      else mql.removeListener(handler);
+    };
+  }, []);
+
   // Scroll cue — softly fade the hero content once user starts scrolling.
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -388,8 +408,11 @@ export default function LandingPage() {
               scrolled ? "opacity-95" : "opacity-100"
             }`}
             style={{
-              transform: settled ? "translate3d(-2.5%, 0, 0)" : "translate3d(0, 0, 0)",
-              willChange: "transform",
+              transform:
+                settled && !isMobileHero
+                  ? "translate3d(-2.5%, 0, 0)"
+                  : "translate3d(0, 0, 0)",
+              willChange: isMobileHero ? "auto" : "transform",
             }}
           >
             <div className="max-w-2xl">
