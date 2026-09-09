@@ -82,12 +82,16 @@ export default function AmbientHeat({ settled = false, onDataReady }) {
   const [frameIdx, setFrameIdx] = useState(0);
   useEffect(() => {
     if (!frames.length) return;
-    // Mobile: 800ms cadence reads as calm ambient motion and cuts
-    // heatmap re-aggregation from ~4.5/s down to ~1.25/s — the single
-    // biggest win. Desktop stays at the original 220ms.
-    const interval = isMobile ? 800 : 220;
+    // Mobile: 1,200ms cadence (was 800ms) reads as slow ambient drift
+    // and gives the fragment shader more headroom between aggregations.
+    // Desktop stays at the original 220ms.
+    const interval = isMobile ? 1200 : 220;
+    // Mobile also steps two frames at a time — the 4h payload frames
+    // are already coarse, so skipping every other one is imperceptible
+    // but halves the number of GPU aggregations per full ambient cycle.
+    const step = isMobile ? 2 : 1;
     const id = setInterval(() => {
-      setFrameIdx((i) => (i + 1) % frames.length);
+      setFrameIdx((i) => (i + step) % frames.length);
     }, interval);
     return () => clearInterval(id);
   }, [frames.length, isMobile]);
@@ -119,20 +123,54 @@ export default function AmbientHeat({ settled = false, onDataReady }) {
     return out;
   }, [frames, frameIdx, cellCentres, isMobile]);
 
+  // Mobile: top-N subset for the wide smoothing pass. Fills the gaps
+  // between focus points so the field reads as continuous glow rather
+  // than a dot grid. Cheaper than the desktop atmosphere layer (300 pts
+  // vs. 1,600) and lower opacity so it doesn't wash out the focus pass.
+  const smoothingData = useMemo(() => {
+    if (!isMobile || !heatData.length) return [];
+    if (heatData.length <= 300) return heatData;
+    // heatData is already weight-sorted when we hit the 600 cap; when
+    // we don't hit the cap, sort a shallow copy so we don't disturb it.
+    const sorted =
+      heatData.length > 600
+        ? heatData
+        : heatData.slice().sort((a, b) => b.weight - a.weight);
+    return sorted.slice(0, 300);
+  }, [heatData, isMobile]);
+
   const initialViewState = useMemo(() => {
     if (!bounds) return { target: [0, 0, 0], zoom: 5 };
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
-    return { target: [cx, cy, 0], zoom: 5.4 };
-  }, [bounds]);
+    // Mobile pulls zoom back from 5.4 → 4.6 so each cell paints smaller
+    // on screen. Fixes the "granular dots" read on narrow viewports and
+    // slashes fragment-shader work per point.
+    return { target: [cx, cy, 0], zoom: isMobile ? 4.6 : 5.4 };
+  }, [bounds, isMobile]);
 
   const layers = useMemo(() => {
     if (!heatData.length) return [];
-    // Mobile: single heatmap pass. The wide 220px atmosphere layer is
-    // dropped; we bump the focus radius slightly to preserve the warm-
-    // map read without a second aggregation per swap.
+    // Mobile: two lean passes — a wide low-opacity smoothing layer over
+    // the top 300 points to fill inter-cell gaps, plus the focus pass
+    // over all 600 for the warm centres. Total point cost stays under
+    // desktop's 1,600.
     if (isMobile) {
       return [
+        new HeatmapLayer({
+          id: "hero-smoothing",
+          data: smoothingData,
+          getPosition: (d) => d.position,
+          getWeight: (d) => d.weight,
+          radiusPixels: 260,
+          intensity: 0.9,
+          threshold: 0.03,
+          colorRange: HEATMAP_COLOR_RANGE,
+          aggregation: "SUM",
+          opacity: 0.28,
+          pickable: false,
+          updateTriggers: { getWeight: [frameIdx], getPosition: [frameIdx] },
+        }),
         new HeatmapLayer({
           id: "hero-focus",
           data: heatData,
