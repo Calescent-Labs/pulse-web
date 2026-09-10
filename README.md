@@ -38,15 +38,18 @@ The public site today ships the **Map**, the **Trending** feed, and the **Topic 
 
 ## Architecture
 
-This repository contains **the Pulse web frontend only**. The backend — data ingestion, model training, ranking, and the API that serves this frontend — lives in a separate private repository and is not distributed here. Nothing in this tree ships hostnames, endpoint paths, provider identifiers, or credentials for that backend; the frontend reads them from environment variables at runtime.
+This repository contains **the Pulse web application** — the React frontend in `frontend/` plus a thin FastAPI service in `backend/` that supports the web app itself (health checks and small server-side utilities).
+
+The **trend intelligence data** — content ingestion, embeddings, clustering, model training, and the ranked heat API that powers the map, trending feed, and topic details — runs on a **separate private data service** operated by Calescent Labs and is not distributed here. Nothing in this tree ships that service's hostnames, endpoint paths, or credentials; the client reads them from environment variables at runtime.
 
 ## Tech stack
 
-- React (Create React App) + React Router
+- React (Create React App) + React Router — `frontend/`
 - Tailwind CSS + shadcn/ui
 - deck.gl (`@deck.gl/react`, `@deck.gl/aggregation-layers`) for the 2-D WebGL heat map and timelapse hero
 - TanStack Query for data fetching, caching, and 402-aware locked-feature handling
 - Recharts for velocity arcs, radar closeness, and sparklines
+- FastAPI + MongoDB — `backend/`, a small supporting service for the web app itself (health checks, server-side utilities). The trend intelligence data does **not** live here.
 
 ## Running locally
 
@@ -74,9 +77,9 @@ Without these values the app will render, but every data surface will render its
 This repository was audited before it was made public. Specifically:
 
 - No `.env`, `.env.local`, or `.env.production` file is committed. `.gitignore` covers every environment file except an explicit `.env.example` template.
-- No API base URLs, backend hostnames, auth-provider dashboard URLs, or tenant identifiers appear anywhere in source.
-- No auth publishable keys, service account IDs, or key fingerprints are checked in — even ones technically safe to expose are treated as internal.
-- Internal working documents (product notes, test reports, session memory) are not part of this tree.
+- No data-API base URLs, provider hostnames, auth-tenant dashboard URLs, or account identifiers for the private data service appear anywhere in source.
+- No auth publishable keys, service-account IDs, or key fingerprints are checked in — even ones technically safe to expose are treated as internal.
+- Internal working documents (product notes, test reports, session memory, API-contract drafts, planning notes) are excluded via `.gitignore` and are not part of this tree.
 - Screenshots show only the aggregate heat field and the region-panel summary view. The raw dot-level map is intentionally not depicted.
 
 If you believe a secret has been checked in, please contact the maintainers before opening a public issue.

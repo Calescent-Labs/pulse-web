@@ -35,6 +35,23 @@ dist
 *token.json*
 *credentials.json*
 
+# Internal working documents — never publish
+memory/
+test_reports/
+test_result.md
+API_REQUESTS.md
+API_REQUESTS_v2.md
+plan/
+tests/
+
+# Platform / dev-env only
+.emergent/
+.gitconfig
+.ruff_cache/
+
+# Root yarn.lock stub — the real lockfile lives in frontend/
+/yarn.lock
+
 # Logs and debug files
 npm-debug.log*
 yarn-debug.log*
