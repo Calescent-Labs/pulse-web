@@ -1,70 +1,89 @@
-# Getting Started with Create React App
+# Pulse
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+**The internet, before it's obvious.**
 
-## Available Scripts
+Pulse scans where audiences are gathering across the open web and surfaces what's actually catching fire — in one place, in one glance.
 
-In the project directory, you can run:
+<p>
+  <img alt="status" src="https://img.shields.io/badge/status-in%20active%20development-orange" />
+  <img alt="frontend" src="https://img.shields.io/badge/frontend-React%20%2B%20deck.gl-6f42c1" />
+  <img alt="data" src="https://img.shields.io/badge/data-private%20API-lightgrey" />
+</p>
 
-### `npm start`
+---
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+![Landing — 7-day heat timelapse behind the hero copy](docs/screenshots/landing-hero.png)
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+Every warm region on the field is a topic gaining attention on the open web right now. The hero loops a rolling 7-day timelapse so the shape of the week is legible at a glance.
 
-### `npm test`
+![Map — region investigation panel open on a hotspot](docs/screenshots/map-region.png)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Click any hotspot on the map and Pulse opens a region panel: how coherent the members are, how many pieces of content sit inside, and which topics they belong to. From there it's one click to the content itself, at its original source.
 
-### `npm run build`
+## What Pulse does
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- **Scan.** Watch attention accrue across the open web in a single 2-D field, not five browser tabs.
+- **Discover.** Click any hotspot to see what's actually inside — the topics, the members, and a plain-English read on how tightly they cluster.
+- **Jump in.** Open any piece of content at its original source. No app-hopping.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Every score ships with its confidence. Heat is a relative attention signal, not a verified fact — and Pulse is honest about that everywhere it appears.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Current state
 
-### `npm run eject`
+Pulse is growing. We are actively training and refining data models on the live heat signal so the platform reads the internet more accurately, more broadly, and much faster over time. Expect the coverage, the scoring, and the topic clustering to keep sharpening on a weekly cadence.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+The public site today ships the **Map**, the **Trending** feed, and the **Topic detail** view. A signed-in Pro tier — time travel, extended windows, cluster summaries, and richer per-topic depth — is next on the roadmap.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Architecture
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+This repository contains **the Pulse web frontend only**. The backend — data ingestion, model training, ranking, and the API that serves this frontend — lives in a separate private repository and is not distributed here. Nothing in this tree ships hostnames, endpoint paths, provider identifiers, or credentials for that backend; the frontend reads them from environment variables at runtime.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Tech stack
 
-## Learn More
+- React (Create React App) + React Router
+- Tailwind CSS + shadcn/ui
+- deck.gl (`@deck.gl/react`, `@deck.gl/aggregation-layers`) for the 2-D WebGL heat map and timelapse hero
+- TanStack Query for data fetching, caching, and 402-aware locked-feature handling
+- Recharts for velocity arcs, radar closeness, and sparklines
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Running locally
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+This app needs a live Pulse API and a small set of environment variables that are **not distributed with the repository**. If you have been granted access, request the current `.env` values from the maintainers.
 
-### Code Splitting
+```bash
+yarn install
+yarn start
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+A minimal `.env` looks like this — actual values are provided out-of-band:
 
-### Analyzing the Bundle Size
+```env
+REACT_APP_PULSE_API_BASE=your_api_base_here
+REACT_APP_PULSE_KEY_FREE=your_key_here
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+Without these values the app will render, but every data surface will render its empty / no-key state.
 
-### Making a Progressive Web App
+## Security posture
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+This repository was audited before it was made public. Specifically:
 
-### Advanced Configuration
+- No `.env`, `.env.local`, or `.env.production` file is committed. `.gitignore` covers every environment file except an explicit `.env.example` template.
+- No API base URLs, backend hostnames, auth-provider dashboard URLs, or tenant identifiers appear anywhere in source.
+- No auth publishable keys, service account IDs, or key fingerprints are checked in — even ones technically safe to expose are treated as internal.
+- Internal working documents (product notes, test reports, session memory) are not part of this tree.
+- Screenshots show only the aggregate heat field and the region-panel summary view. The raw dot-level map is intentionally not depicted.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+If you believe a secret has been checked in, please contact the maintainers before opening a public issue.
 
-### Deployment
+## Contributing
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+Pulse is a showcase repository. Issues are welcome; pull requests are by invitation. Please do not open PRs that add real API keys, tokens, or backend URLs — they will be rejected and the credentials treated as compromised.
 
-### `npm run build` fails to minify
+## License
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+All rights reserved. The source is public so the product can be evaluated and understood; it is not licensed for reuse, redistribution, or derivative works without written permission.
+
+## Credits
+
+Built by **Calescent Labs**.
