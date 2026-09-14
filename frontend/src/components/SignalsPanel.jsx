@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Lock, PanelRightClose, PanelRightOpen, Rows3, Rows4, Sparkles } from "lucide-react";
+import { AlertTriangle, ChevronRight, Lock, PanelRightClose, PanelRightOpen, Rows3, Rows4, Sparkles } from "lucide-react";
 import { HeatBadge } from "./HeatBadge";
 import { StatusChip } from "./StatusChip";
 import { Spinner } from "./Spinner";
@@ -55,6 +55,7 @@ export function SignalsPanel({
   tier,
   onHoverTopic,
   focusedTopicId,
+  isHistoricalMoment = false,
 }) {
   const isFree = tier !== "pro";
   const [density, setDensity] = useState(loadDensity);
@@ -163,6 +164,28 @@ export function SignalsPanel({
       </div>
 
       <ol data-testid="signals-list" ref={listRef} className="flex-1 overflow-auto">
+        {isHistoricalMoment && (
+          <li
+            data-testid="signals-historical-notice"
+            className="border-b hairline bg-[hsl(45,80%,12%)]/40 px-3 py-2"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-[hsl(45,90%,60%)]" />
+              <div className="min-w-0 space-y-1 mono text-[10px] normal-case tracking-normal text-neutral-300 leading-relaxed">
+                <div className="mono text-[10px] uppercase tracking-[0.18em] text-[hsl(45,90%,70%)]">
+                  historical naming caveat
+                </div>
+                <div>
+                  The map is accurate for the selected moment, but topic names below reflect
+                  <span className="text-neutral-100"> today's</span> top topics — historical
+                  ranking is coming soon. Rows shown as
+                  <span className="text-neutral-100"> Topic #N</span> were hot then but aren't
+                  ranked today; click to open them anyway.
+                </div>
+              </div>
+            </div>
+          </li>
+        )}
         {visibleTopics.length === 0 && !loading && (
           <li className="p-4 text-center text-xs text-muted-foreground">
             Nothing named in this view — try zooming out or panning to a hot region.
@@ -173,6 +196,11 @@ export function SignalsPanel({
           const locked = isFree && i >= FREE_VISIBLE;
           const rank = i + 1;
           const isFocused = focusedTopicId != null && focusedTopicId === t.topic_id;
+          const isUnnamed = Boolean(row.unnamed);
+          // In historical mode, the heat/percentile numbers on `t` are
+          // "current" values, not "then" values. Suppress them so the row
+          // doesn't imply we know how hot the topic was at the picked asof.
+          const showHeatMeta = !isHistoricalMoment && !isUnnamed;
           return (
             <li
               key={t.topic_id}
@@ -208,7 +236,7 @@ export function SignalsPanel({
                   <div className="truncate text-sm text-neutral-100 group-hover:text-white">
                     {safeName(t)}
                   </div>
-                  {!isCompact && (
+                  {!isCompact && !isUnnamed && (
                     <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
                       {t.status && <StatusChip status={t.status} />}
                       {t.sector && (
@@ -219,11 +247,24 @@ export function SignalsPanel({
                     </div>
                   )}
                   <div className={`${isCompact ? "mt-1" : "mt-1.5"} flex items-center justify-between gap-2`}>
-                    <HeatBadge
-                      percentile={t.heat_percentile}
-                      confidence={t.heat_confidence}
-                      size="sm"
-                    />
+                    {showHeatMeta ? (
+                      <HeatBadge
+                        percentile={t.heat_percentile}
+                        confidence={t.heat_confidence}
+                        size="sm"
+                      />
+                    ) : (
+                      <span
+                        className="mono text-[9px] uppercase tracking-widest text-muted-foreground"
+                        title={
+                          isHistoricalMoment
+                            ? "Historical heat rank is not available yet"
+                            : "This topic isn't in the current top-100 feed"
+                        }
+                      >
+                        {isHistoricalMoment ? "heat then · —" : "unranked today"}
+                      </span>
+                    )}
                     <span
                       className="mono text-[10px] uppercase tracking-widest text-neutral-300"
                       title={`${row.countInView} signals from this topic inside the current view`}

@@ -193,6 +193,15 @@ export default function MapPage() {
   const [downloading, setDownloading] = useState(false);
   const [momentPickerOpen, setMomentPickerOpen] = useState(false);
 
+  // Historical moment mode — the /v1/topics feed the panel joins against
+  // is always "now", so the panel's names & heat percentiles reflect
+  // today's top topics, not the topics that were hot at the picked asof.
+  // We use this flag to (a) label the panel honestly and (b) suppress
+  // "current" heat/velocity numbers on rows when they'd mislead.
+  const isHistoricalMoment = Boolean(
+    returnedMode === "moment" && asof && Date.now() - new Date(asof).getTime() > 24 * 3600000,
+  );
+
   // Viewport-driven signals panel
   const [visibleBounds, setVisibleBounds] = useState(null);
   const [signalsOpen, setSignalsOpen] = useState(
@@ -270,14 +279,26 @@ export default function MapPage() {
     const rows = [];
     counts.forEach((count, topicId) => {
       const t = topicsMap.get(topicId);
-      if (!t) return; // unnamed / not in top-100 feed
-      rows.push({ topic: t, countInView: count });
+      if (t) {
+        rows.push({ topic: t, countInView: count, unnamed: false });
+      } else {
+        // Historical-moment gap: the /v1/topics feed is always current, so
+        // topics that were hot in the past (e.g. July 2026 World Cup) don't
+        // appear in the top-100 today. Rather than silently drop the points
+        // as noise, surface them as an unnamed row keyed by topic_id so the
+        // panel still reflects what the map is actually showing.
+        rows.push({
+          topic: { topic_id: topicId },
+          countInView: count,
+          unnamed: true,
+        });
+      }
     });
 
     // If we haven't heard from the viewport yet, seed with the full topic feed
     // ranked by heat so the panel has content immediately.
     if (!visibleBounds && rows.length === 0) {
-      topicsMap.forEach((t) => rows.push({ topic: t, countInView: 0 }));
+      topicsMap.forEach((t) => rows.push({ topic: t, countInView: 0, unnamed: false }));
     }
 
     rows.sort((a, b) => {
@@ -374,6 +395,7 @@ export default function MapPage() {
             tier={tier}
             onHoverTopic={onHoverTopic}
             focusedTopicId={focusTopicId}
+            isHistoricalMoment={isHistoricalMoment}
           />
         )}
 
