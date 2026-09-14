@@ -14,8 +14,14 @@ const PRO_KEY = process.env.REACT_APP_PULSE_KEY_PRO || "";
 const DEV_TOGGLE_ENABLED = process.env.REACT_APP_DEV_TIER_TOGGLE === "true";
 
 export function TierProvider({ children }) {
-  // Default to free tier — Pro is opt-in via the dev toggle only.
-  const [tier, setTier] = useState(/** @type {'free'|'pro'} */ ("free"));
+  // Promo unlock — Pro features are free for a limited time. As long as a
+  // Pro API key is configured we default every visitor to the Pro tier,
+  // which unlocks every gated component through the existing useTier()
+  // consumers (SignalsPanel, TrendingPage, TopicDetailPage, queries.js).
+  // Falls back to Free automatically if no Pro key is configured.
+  const [tier, setTier] = useState(/** @type {'free'|'pro'} */ (
+    PRO_KEY ? "pro" : "free"
+  ));
 
   const apiKey = tier === "pro" ? PRO_KEY : FREE_KEY;
 
@@ -36,6 +42,10 @@ export function TierProvider({ children }) {
       devToggleEnabled: DEV_TOGGLE_ENABLED,
       hasFreeKey: Boolean(FREE_KEY),
       hasProKey: Boolean(PRO_KEY),
+      // True while the "Pro free for a limited time" promo is active. Real
+      // paid Pro accounts will not set this — the banner disappears once
+      // the promo ends and gating (or real subscriptions) come back.
+      promoUnlock: Boolean(PRO_KEY) && tier === "pro",
     }),
     [tier, apiKey, setTierSafe],
   );

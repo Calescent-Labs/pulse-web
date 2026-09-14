@@ -7,6 +7,7 @@ import { useTier } from "../lib/tierContext";
 import { useClerkAvailability } from "../lib/useClerkAvailability";
 import { formatRelativeFromISO, isStale } from "../lib/format";
 import { Disclaimer } from "./Disclaimer";
+import { PromoBanner } from "./PromoBanner";
 
 function TierToggle() {
   const { tier, setTier, devToggleEnabled, hasProKey } = useTier();
@@ -159,6 +160,8 @@ export function AppShell({ children, disclaimer, dense = false }) {
           <AuthChrome />
         </div>
       </header>
+
+      <PromoBanner />
 
       <main
         data-testid="app-main"
