@@ -173,22 +173,27 @@ export function SignalsPanel({
               <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-[hsl(45,90%,60%)]" />
               <div className="min-w-0 space-y-1 mono text-[10px] normal-case tracking-normal text-neutral-300 leading-relaxed">
                 <div className="mono text-[10px] uppercase tracking-[0.18em] text-[hsl(45,90%,70%)]">
-                  historical naming caveat
+                  historical topics coming soon
                 </div>
                 <div>
-                  The map is accurate for the selected moment, but topic names below reflect
-                  <span className="text-neutral-100"> today's</span> top topics — historical
-                  ranking is coming soon. Rows shown as
-                  <span className="text-neutral-100"> Topic #N</span> were hot then but aren't
-                  ranked today; click to open them anyway.
+                  The heat map is accurate for the selected moment, but topic assignments for
+                  past moments aren't yet available — the ranking pipeline currently only
+                  publishes current topics. Rows shown as
+                  <span className="text-neutral-100"> Topic #N</span> are historical
+                  assignments the API can still resolve on click.
                 </div>
               </div>
             </div>
           </li>
         )}
         {visibleTopics.length === 0 && !loading && (
-          <li className="p-4 text-center text-xs text-muted-foreground">
-            Nothing named in this view — try zooming out or panning to a hot region.
+          <li
+            data-testid="signals-empty"
+            className="p-4 text-center text-xs text-muted-foreground"
+          >
+            {isHistoricalMoment
+              ? "No historical topic assignments in this view. The heat is accurate — Pulse just hasn't published named topics for this moment yet."
+              : "Nothing named in this view — try zooming out or panning to a hot region."}
           </li>
         )}
         {visibleTopics.map((row, i) => {

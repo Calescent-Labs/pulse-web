@@ -196,8 +196,10 @@ export default function MapPage() {
   // Historical moment mode — the /v1/topics feed the panel joins against
   // is always "now", so the panel's names & heat percentiles reflect
   // today's top topics, not the topics that were hot at the picked asof.
-  // We use this flag to (a) label the panel honestly and (b) suppress
-  // "current" heat/velocity numbers on rows when they'd mislead.
+  // We use this flag to (a) label the panel honestly, (b) suppress
+  // "current" heat/velocity numbers on rows when they'd mislead, and
+  // (c) skip the "seed with today's top-100" fallback that would
+  // otherwise mask the fact that we have no historical assignments.
   const isHistoricalMoment = Boolean(
     returnedMode === "moment" && asof && Date.now() - new Date(asof).getTime() > 24 * 3600000,
   );
@@ -250,6 +252,7 @@ export default function MapPage() {
     y: regionCentre?.y,
     radius: regionCentre?.radius,
     window: win,
+    asof: asof || undefined,
     limit: 5,
     enabled: Boolean(regionCentre),
   });
@@ -297,7 +300,12 @@ export default function MapPage() {
 
     // If we haven't heard from the viewport yet, seed with the full topic feed
     // ranked by heat so the panel has content immediately.
-    if (!visibleBounds && rows.length === 0) {
+    //
+    // Historical exception: when the user has picked a past moment, seeding
+    // with today's top-100 is dishonest — those aren't the topics of that
+    // moment. Leave rows empty and let the panel render an honest
+    // "topic assignments not available yet for this moment" state.
+    if (!visibleBounds && rows.length === 0 && !isHistoricalMoment) {
       topicsMap.forEach((t) => rows.push({ topic: t, countInView: 0, unnamed: false }));
     }
 
@@ -309,7 +317,7 @@ export default function MapPage() {
     });
 
     return { rows: rows.slice(0, 30), noise };
-  }, [points, topicsMap, visibleBounds, signalsSort]);
+  }, [points, topicsMap, visibleBounds, signalsSort, isHistoricalMoment]);
 
   return (
     <AppShell disclaimer={disclaimer} dense>
@@ -405,6 +413,7 @@ export default function MapPage() {
             center={regionCentre}
             query={regionQuery}
             onClose={() => setRegionCentre(null)}
+            isHistorical={isHistoricalMoment}
           />
         )}
 

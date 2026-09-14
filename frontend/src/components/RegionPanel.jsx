@@ -14,7 +14,7 @@ import { formatCompact, safeName } from "../lib/format";
  * region is a coincidental spatial adjacency rather than one story,
  * and the UI must say so plainly.
  */
-export function RegionPanel({ center, query, onClose }) {
+export function RegionPanel({ center, query, onClose, isHistorical = false }) {
   const isLoading = query?.isLoading;
   const isError = query?.isError;
   const err = query?.error;
@@ -79,11 +79,13 @@ export function RegionPanel({ center, query, onClose }) {
       ) : memberCount === 0 ? (
         <div className="p-4">
           <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            nothing here
+            {isHistorical ? "no historical assignments" : "nothing here"}
           </div>
           <p className="mt-2 text-xs text-neutral-400">
             {note ||
-              "No content within this radius. Try a hotter area, or a slightly larger radius."}
+              (isHistorical
+                ? "The heat is accurate for this moment, but topic assignments for the past aren't yet published. Jump back to now to investigate this region."
+                : "No content within this radius. Try a hotter area, or a slightly larger radius.")}
           </p>
         </div>
       ) : (
