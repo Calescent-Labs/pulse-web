@@ -4,17 +4,19 @@ import { CalendarClock, X } from "lucide-react";
 /**
  * MomentPicker — small popover above the moment scrubber's timestamp.
  *
- * Lets a user jump the map to a specific date/time within the last 30 days
- * without dragging the slider. Uses a native <input type="datetime-local">
- * so the browser supplies the calendar + time picker for free (works on
- * desktop and mobile). All internal math is done in UTC to match the
- * scrubber display, but the input surface is local time because that is
- * what users think in — the display below the input previews the exact
- * UTC value that will be applied.
+ * Lets a user jump the map to any past date/time. There is no hard cap
+ * client-side — we accept anything from ~10 years ago up to "now" and
+ * let the server say "no data" for periods before tracking began. That
+ * message surfaces in the map's EmptyState when the API returns zero
+ * points for the picked asof.
+ *
+ * All internal math is done in UTC to match the scrubber display, but
+ * the input surface is local time because that is what users think in
+ * — the display below the input previews the exact UTC value that
+ * will be applied.
  *
  * Props:
- *   valueHoursAgo  number   — current scrubber value, 0…720 (h back from now)
- *   maxHoursAgo    number   — hard cap on how far back we let the user jump
+ *   valueHoursAgo  number   — current scrubber value in hours-ago
  *   onCommit       (hours)  — commit picked value in hours-ago
  *   onNow          ()       — shortcut back to now (hours = 0)
  *   onClose        ()       — dismiss without change
@@ -39,7 +41,14 @@ function fmtUtcStamp(date) {
   return date.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
-export function MomentPicker({ valueHoursAgo, maxHoursAgo = 720, onCommit, onNow, onClose }) {
+// Generous historical floor for the native input's `min` attribute. We
+// don't enforce a real cap client-side; the server tells us when it has
+// no data for the picked moment. Ten years back is far more than the
+// tracked window and gives the datepicker a sane lower bound so the
+// browser calendar isn't infinite.
+const MIN_HISTORICAL_HOURS = 24 * 365 * 10;
+
+export function MomentPicker({ valueHoursAgo, onCommit, onNow, onClose }) {
   const rootRef = useRef(null);
 
   // Convert the current scrubber value → the datetime it represents.
@@ -49,26 +58,27 @@ export function MomentPicker({ valueHoursAgo, maxHoursAgo = 720, onCommit, onNow
   );
   const [inputValue, setInputValue] = useState(() => fmtLocalForInput(initialDate));
 
-  const minDate = useMemo(() => new Date(Date.now() - maxHoursAgo * 3600000), [maxHoursAgo]);
+  const minDate = useMemo(() => new Date(Date.now() - MIN_HISTORICAL_HOURS * 3600000), []);
   const maxDate = useMemo(() => new Date(), []);
 
   // Live preview of what the picked local datetime resolves to in UTC —
-  // and whether it is within the allowed window.
+  // future dates are the only thing we outright reject; anything in the
+  // past is passed to the server, which will report "no data" if it
+  // predates the tracking window.
   const preview = useMemo(() => {
     const picked = new Date(inputValue);
     if (Number.isNaN(picked.getTime())) {
-      return { valid: false, utc: "—", hoursAgo: null, outOfRange: false };
+      return { valid: false, utc: "—", hoursAgo: null, future: false };
     }
     const now = Date.now();
     const hoursAgo = (now - picked.getTime()) / 3600000;
-    const outOfRange = hoursAgo < 0 || hoursAgo > maxHoursAgo;
     return {
       valid: true,
       utc: fmtUtcStamp(picked),
       hoursAgo,
-      outOfRange,
+      future: hoursAgo < 0,
     };
-  }, [inputValue, maxHoursAgo]);
+  }, [inputValue]);
 
   // Outside-click + Escape dismiss.
   useEffect(() => {
@@ -87,8 +97,8 @@ export function MomentPicker({ valueHoursAgo, maxHoursAgo = 720, onCommit, onNow
   }, [onClose]);
 
   const commit = () => {
-    if (!preview.valid || preview.outOfRange) return;
-    const clamped = Math.max(0, Math.min(maxHoursAgo, Math.round(preview.hoursAgo)));
+    if (!preview.valid || preview.future) return;
+    const clamped = Math.max(0, Math.round(preview.hoursAgo));
     onCommit(clamped);
   };
 
@@ -117,8 +127,8 @@ export function MomentPicker({ valueHoursAgo, maxHoursAgo = 720, onCommit, onNow
       </div>
 
       <p className="mt-2 mono text-[10px] text-muted-foreground normal-case tracking-normal leading-relaxed">
-        Pick any hour in the last {Math.round(maxHoursAgo / 24)} days. Times are entered in your local
-        timezone and applied as the equivalent UTC instant.
+        Pick any past date. Times are entered in your local timezone and applied as the
+        equivalent UTC instant. If we don't have signals that far back, the map will say so.
       </p>
 
       <input
@@ -137,8 +147,8 @@ export function MomentPicker({ valueHoursAgo, maxHoursAgo = 720, onCommit, onNow
           <>
             <span className="text-neutral-500">applies as</span>{" "}
             <span className="text-neutral-200">{preview.utc}</span>
-            {preview.outOfRange && (
-              <span className="ml-1.5 text-[hsl(0,80%,60%)]">· outside window</span>
+            {preview.future && (
+              <span className="ml-1.5 text-[hsl(0,80%,60%)]">· future dates aren't tracked</span>
             )}
           </>
         ) : (
@@ -160,7 +170,7 @@ export function MomentPicker({ valueHoursAgo, maxHoursAgo = 720, onCommit, onNow
           type="button"
           data-testid="moment-picker-commit"
           onClick={commit}
-          disabled={!preview.valid || preview.outOfRange}
+          disabled={!preview.valid || preview.future}
           className="rounded-sm border hairline bg-[hsl(25,95%,60%)]/10 px-3 py-1 mono text-[10px] uppercase tracking-widest text-[hsl(25,95%,72%)] transition-colors hover:bg-[hsl(25,95%,60%)]/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
           set moment

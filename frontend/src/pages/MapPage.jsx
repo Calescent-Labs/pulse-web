@@ -320,7 +320,7 @@ export default function MapPage() {
                   noteMsg
                     ? noteMsg
                     : mode === "moment"
-                    ? "Moment mode has data from 2026-07-15 onward. Try a later timestamp or switch to Cumulative."
+                    ? "Tracking doesn't reach back that far. Try a more recent timestamp — data is currently reliable from 2026-07-15 onward. You can also switch to Cumulative for the current window."
                     : "Try widening the window."
                 }
               />
@@ -693,7 +693,6 @@ export default function MapPage() {
                   {momentPickerOpen && (
                     <MomentPicker
                       valueHoursAgo={scrubHours}
-                      maxHoursAgo={720}
                       onCommit={(h) => {
                         setScrubHours(h);
                         setMomentPickerOpen(false);
