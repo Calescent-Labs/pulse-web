@@ -9,6 +9,7 @@ import { MapCanvas } from "../components/MapCanvas";
 import { SignalsPanel } from "../components/SignalsPanel";
 import { RegionPanel } from "../components/RegionPanel";
 import { HeatBadge } from "../components/HeatBadge";
+import { Spinner } from "../components/Spinner";
 import { useMap, useMapRegion, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
 import { useSignUpModal } from "../components/SignUpModal";
@@ -299,7 +300,11 @@ export default function MapPage() {
               <ErrorState error={mapQuery.error} title="Map unavailable" />
             </div>
           ) : mapQuery.isLoading ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <div
+              data-testid="map-loading"
+              className="flex h-full flex-col items-center justify-center gap-3 text-center"
+            >
+              <Spinner size="md" className="text-[hsl(25,95%,60%)]" />
               <div className="mono text-xs text-muted-foreground">loading semantic heat…</div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-600 max-w-xs">
                 staging is tunnelled — first fetch can take up to 2 minutes.
@@ -363,7 +368,7 @@ export default function MapPage() {
             onSortChange={setSignalsSort}
             open={signalsOpen}
             onToggle={() => setSignalsOpen((o) => !o)}
-            loading={mapQuery.isLoading || topicsQuery.isLoading}
+            loading={mapQuery.isFetching || topicsQuery.isFetching}
             tier={tier}
             onHoverTopic={onHoverTopic}
             focusedTopicId={focusTopicId}
@@ -400,7 +405,13 @@ export default function MapPage() {
                 </span>
               </div>
               {focusHistoryQ.isLoading ? (
-                <div className="mono text-[10px] text-neutral-500 mt-0.5">loading 24h arc…</div>
+                <div
+                  data-testid="focus-history-loading"
+                  className="mt-0.5 inline-flex items-center gap-1.5 mono text-[10px] text-neutral-400"
+                >
+                  <Spinner size="xs" className="text-[hsl(25,95%,60%)]" />
+                  <span>loading 24h arc…</span>
+                </div>
               ) : focusHistory.length >= 2 ? (
                 <div className="mt-1 flex items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -477,6 +488,20 @@ export default function MapPage() {
               );
             })}
           </div>
+
+          {/* Refetch indicator — surfaces when the map data is being reloaded
+              after a window/mode/focus change. isLoading covers the first
+              fetch (handled by the full-canvas overlay), so this branch is
+              only the silent refetch case. */}
+          {mapQuery.isFetching && !mapQuery.isLoading && (
+            <div
+              data-testid="map-refetching"
+              className="pointer-events-auto inline-flex items-center gap-2 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)] backdrop-blur"
+            >
+              <Spinner size="xs" />
+              <span>updating signals…</span>
+            </div>
+          )}
 
           {/* Mode toggle */}
           <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">

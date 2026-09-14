@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, MapPin, X } from "lucide-react";
 import { HeatBadge } from "./HeatBadge";
+import { Spinner } from "./Spinner";
 import { formatCompact, safeName } from "../lib/format";
 
 /**
@@ -57,9 +58,10 @@ export function RegionPanel({ center, query, onClose }) {
       </header>
 
       {isLoading ? (
-        <div className="p-4">
-          <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            investigating…
+        <div data-testid="region-loading" className="p-4">
+          <div className="inline-flex items-center gap-1.5 mono text-[10px] uppercase tracking-widest text-[hsl(25,95%,60%)]">
+            <Spinner size="xs" />
+            <span>investigating…</span>
           </div>
           <div className="mt-3 space-y-2">
             {[0, 1, 2].map((i) => (

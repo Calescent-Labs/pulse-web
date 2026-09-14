@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ChevronRight, Lock, PanelRightClose, PanelRightOpen, Rows3, Rows4, Sparkles } from "lucide-react";
 import { HeatBadge } from "./HeatBadge";
 import { StatusChip } from "./StatusChip";
+import { Spinner } from "./Spinner";
 import { formatCompact, safeName } from "../lib/format";
 
 const FREE_VISIBLE = 3;
@@ -100,11 +101,19 @@ export function SignalsPanel({
             What's trending here
           </div>
           <div className="mt-0.5 mono text-[10px] text-neutral-500">
-            {loading
-              ? "reading viewport…"
-              : `${visibleTopics.length} ${visibleTopics.length === 1 ? "topic" : "topics"} · click any to open it${
-                  visibleNoiseCount > 0 ? ` · ${formatCompact(visibleNoiseCount)} unnamed` : ""
-                }`}
+            {loading ? (
+              <span
+                data-testid="signals-loading"
+                className="inline-flex items-center gap-1.5 text-[hsl(25,95%,60%)]"
+              >
+                <Spinner size="xs" />
+                <span>reading viewport…</span>
+              </span>
+            ) : (
+              `${visibleTopics.length} ${visibleTopics.length === 1 ? "topic" : "topics"} · click any to open it${
+                visibleNoiseCount > 0 ? ` · ${formatCompact(visibleNoiseCount)} unnamed` : ""
+              }`
+            )}
           </div>
         </div>
         <button
