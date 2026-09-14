@@ -10,6 +10,7 @@ import { SignalsPanel } from "../components/SignalsPanel";
 import { RegionPanel } from "../components/RegionPanel";
 import { HeatBadge } from "../components/HeatBadge";
 import { Spinner } from "../components/Spinner";
+import { MomentPicker } from "../components/MomentPicker";
 import { useMap, useMapRegion, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
 import { useSignUpModal } from "../components/SignUpModal";
@@ -190,6 +191,7 @@ export default function MapPage() {
 
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [momentPickerOpen, setMomentPickerOpen] = useState(false);
 
   // Viewport-driven signals panel
   const [visibleBounds, setVisibleBounds] = useState(null);
@@ -674,12 +676,35 @@ export default function MapPage() {
                     <ChevronRight className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="flex items-center gap-3 text-neutral-200">
-                  <span>{scrubHours === 0 ? "now" : `${formatHoursAgo(scrubHours)} ago`}</span>
-                  <span className="text-neutral-500">·</span>
-                  <span className="mono text-[10px] text-muted-foreground">
-                    {asOfStamp ? new Date(asOfStamp).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "—"}
-                  </span>
+                <div className="relative flex items-center gap-3 text-neutral-200">
+                  <button
+                    type="button"
+                    data-testid="moment-picker-trigger"
+                    onClick={() => setMomentPickerOpen((o) => !o)}
+                    className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2 py-1 transition-colors hover:bg-secondary/60 hover:text-neutral-50"
+                    title="Click to pick a specific date & time"
+                  >
+                    <span>{scrubHours === 0 ? "now" : `${formatHoursAgo(scrubHours)} ago`}</span>
+                    <span className="text-neutral-500">·</span>
+                    <span className="mono text-[10px] text-muted-foreground">
+                      {asOfStamp ? new Date(asOfStamp).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "—"}
+                    </span>
+                  </button>
+                  {momentPickerOpen && (
+                    <MomentPicker
+                      valueHoursAgo={scrubHours}
+                      maxHoursAgo={720}
+                      onCommit={(h) => {
+                        setScrubHours(h);
+                        setMomentPickerOpen(false);
+                      }}
+                      onNow={() => {
+                        setScrubHours(0);
+                        setMomentPickerOpen(false);
+                      }}
+                      onClose={() => setMomentPickerOpen(false)}
+                    />
+                  )}
                 </div>
               </div>
               <input
