@@ -90,23 +90,55 @@ export function RegionPanel({ center, query, onClose, isHistorical = false }) {
         </div>
       ) : (
         <div className="space-y-4 p-3">
-          {/* Plain-English lead-in — what did you just click on? */}
-          <p
-            data-testid="region-lead"
-            className="text-sm leading-relaxed text-neutral-100"
-          >
-            {coherent ? (
-              <>
-                <span className="font-medium text-neutral-50">You clicked on a real story.</span>{" "}
-                <span className="text-neutral-300">Here's what's inside — click any topic to open its content.</span>
-              </>
-            ) : (
-              <>
-                <span className="font-medium text-neutral-50">Nothing single is dominating here.</span>{" "}
-                <span className="text-neutral-300">These topics happen to sit nearby — they're not one story.</span>
-              </>
-            )}
-          </p>
+          {/* Historical mode with no topic assignments — the region is
+              real (server returned members + coherence) but the topic
+              layer wasn't published for this moment. Explain that up
+              front so users don't wait for a click target that won't
+              appear below. */}
+          {isHistorical && topics.length === 0 && memberCount > 0 && (
+            <div
+              data-testid="region-historical-notice"
+              className="rounded-sm border hairline border-[hsl(45,80%,55%)]/30 bg-[hsl(45,80%,12%)]/40 p-3"
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-[hsl(45,90%,60%)]" />
+                <div className="min-w-0 space-y-1 text-xs leading-relaxed text-neutral-300">
+                  <div className="mono text-[10px] uppercase tracking-[0.18em] text-[hsl(45,90%,70%)]">
+                    historical assignments unavailable
+                  </div>
+                  <div>
+                    Pulse recorded{" "}
+                    <span className="text-neutral-100">{formatCompact(memberCount)}</span>{" "}
+                    signals in this region at the picked moment, but historical topic
+                    assignments aren't published yet — so we can't name what these signals
+                    were about. Jump back to now to investigate this region with names.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Plain-English lead-in — what did you just click on?
+              Suppressed in the historical-no-topics case above, which
+              speaks for itself. */}
+          {!(isHistorical && topics.length === 0 && memberCount > 0) && (
+            <p
+              data-testid="region-lead"
+              className="text-sm leading-relaxed text-neutral-100"
+            >
+              {coherent ? (
+                <>
+                  <span className="font-medium text-neutral-50">You clicked on a real story.</span>{" "}
+                  <span className="text-neutral-300">Here's what's inside — click any topic to open its content.</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-neutral-50">Nothing single is dominating here.</span>{" "}
+                  <span className="text-neutral-300">These topics happen to sit nearby — they're not one story.</span>
+                </>
+              )}
+            </p>
+          )}
 
           {/* Coherence read — the non-negotiable honesty gate. */}
           <div
@@ -179,19 +211,25 @@ export function RegionPanel({ center, query, onClose, isHistorical = false }) {
               </div>
             </div>
             <div className="rounded-sm border hairline bg-background/50 p-2">
-              <div className="text-muted-foreground">unclustered</div>
+              <div className="text-muted-foreground">
+                {isHistorical ? "untagged" : "unclustered"}
+              </div>
               <div className="mt-1 text-base font-medium text-neutral-100">
                 {formatCompact(unclustered)}
               </div>
               <div className="mt-0.5 text-[9px] normal-case text-neutral-500">
                 {memberCount > 0
-                  ? `${Math.round((unclustered / memberCount) * 100)}% of the region belongs to no topic`
+                  ? isHistorical
+                    ? `${Math.round((unclustered / memberCount) * 100)}% has no published topic yet`
+                    : `${Math.round((unclustered / memberCount) * 100)}% of the region belongs to no topic`
                   : ""}
               </div>
             </div>
           </div>
 
-          {/* Top topics in the region */}
+          {/* Top topics in the region — hidden entirely in the historical
+              no-topics case; the notice at the top already explains why. */}
+          {!(isHistorical && topics.length === 0 && memberCount > 0) && (
           <div>
             <div className="mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
               top topics · click any to open →
@@ -232,6 +270,7 @@ export function RegionPanel({ center, query, onClose, isHistorical = false }) {
               )}
             </ul>
           </div>
+          )}
         </div>
       )}
     </aside>
