@@ -9,6 +9,8 @@ import { MapCanvas } from "../components/MapCanvas";
 import { SignalsPanel } from "../components/SignalsPanel";
 import { RegionPanel } from "../components/RegionPanel";
 import { HeatBadge } from "../components/HeatBadge";
+import { Spinner } from "../components/Spinner";
+import { MomentPicker } from "../components/MomentPicker";
 import { useMap, useMapRegion, useTopic, useTopics } from "../lib/queries";
 import { useTier } from "../lib/tierContext";
 import { useSignUpModal } from "../components/SignUpModal";
@@ -189,6 +191,18 @@ export default function MapPage() {
 
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [momentPickerOpen, setMomentPickerOpen] = useState(false);
+
+  // Historical moment mode — the /v1/topics feed the panel joins against
+  // is always "now", so the panel's names & heat percentiles reflect
+  // today's top topics, not the topics that were hot at the picked asof.
+  // We use this flag to (a) label the panel honestly, (b) suppress
+  // "current" heat/velocity numbers on rows when they'd mislead, and
+  // (c) skip the "seed with today's top-100" fallback that would
+  // otherwise mask the fact that we have no historical assignments.
+  const isHistoricalMoment = Boolean(
+    returnedMode === "moment" && asof && Date.now() - new Date(asof).getTime() > 24 * 3600000,
+  );
 
   // Viewport-driven signals panel
   const [visibleBounds, setVisibleBounds] = useState(null);
@@ -238,6 +252,7 @@ export default function MapPage() {
     y: regionCentre?.y,
     radius: regionCentre?.radius,
     window: win,
+    asof: asof || undefined,
     limit: 5,
     enabled: Boolean(regionCentre),
   });
@@ -267,14 +282,31 @@ export default function MapPage() {
     const rows = [];
     counts.forEach((count, topicId) => {
       const t = topicsMap.get(topicId);
-      if (!t) return; // unnamed / not in top-100 feed
-      rows.push({ topic: t, countInView: count });
+      if (t) {
+        rows.push({ topic: t, countInView: count, unnamed: false });
+      } else {
+        // Historical-moment gap: the /v1/topics feed is always current, so
+        // topics that were hot in the past (e.g. July 2026 World Cup) don't
+        // appear in the top-100 today. Rather than silently drop the points
+        // as noise, surface them as an unnamed row keyed by topic_id so the
+        // panel still reflects what the map is actually showing.
+        rows.push({
+          topic: { topic_id: topicId },
+          countInView: count,
+          unnamed: true,
+        });
+      }
     });
 
     // If we haven't heard from the viewport yet, seed with the full topic feed
     // ranked by heat so the panel has content immediately.
-    if (!visibleBounds && rows.length === 0) {
-      topicsMap.forEach((t) => rows.push({ topic: t, countInView: 0 }));
+    //
+    // Historical exception: when the user has picked a past moment, seeding
+    // with today's top-100 is dishonest — those aren't the topics of that
+    // moment. Leave rows empty and let the panel render an honest
+    // "topic assignments not available yet for this moment" state.
+    if (!visibleBounds && rows.length === 0 && !isHistoricalMoment) {
+      topicsMap.forEach((t) => rows.push({ topic: t, countInView: 0, unnamed: false }));
     }
 
     rows.sort((a, b) => {
@@ -285,7 +317,7 @@ export default function MapPage() {
     });
 
     return { rows: rows.slice(0, 30), noise };
-  }, [points, topicsMap, visibleBounds, signalsSort]);
+  }, [points, topicsMap, visibleBounds, signalsSort, isHistoricalMoment]);
 
   return (
     <AppShell disclaimer={disclaimer} dense>
@@ -299,7 +331,11 @@ export default function MapPage() {
               <ErrorState error={mapQuery.error} title="Map unavailable" />
             </div>
           ) : mapQuery.isLoading ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <div
+              data-testid="map-loading"
+              className="flex h-full flex-col items-center justify-center gap-3 text-center"
+            >
+              <Spinner size="md" className="text-[hsl(25,95%,60%)]" />
               <div className="mono text-xs text-muted-foreground">loading semantic heat…</div>
               <div className="mono text-[10px] uppercase tracking-widest text-neutral-600 max-w-xs">
                 staging is tunnelled — first fetch can take up to 2 minutes.
@@ -313,7 +349,7 @@ export default function MapPage() {
                   noteMsg
                     ? noteMsg
                     : mode === "moment"
-                    ? "Moment mode has data from 2026-07-15 onward. Try a later timestamp or switch to Cumulative."
+                    ? "Tracking doesn't reach back that far. Try a more recent timestamp — data is currently reliable from 2026-07-15 onward. You can also switch to Cumulative for the current window."
                     : "Try widening the window."
                 }
               />
@@ -363,10 +399,11 @@ export default function MapPage() {
             onSortChange={setSignalsSort}
             open={signalsOpen}
             onToggle={() => setSignalsOpen((o) => !o)}
-            loading={mapQuery.isLoading || topicsQuery.isLoading}
+            loading={mapQuery.isFetching || topicsQuery.isFetching}
             tier={tier}
             onHoverTopic={onHoverTopic}
             focusedTopicId={focusTopicId}
+            isHistoricalMoment={isHistoricalMoment}
           />
         )}
 
@@ -376,6 +413,7 @@ export default function MapPage() {
             center={regionCentre}
             query={regionQuery}
             onClose={() => setRegionCentre(null)}
+            isHistorical={isHistoricalMoment}
           />
         )}
 
@@ -400,7 +438,13 @@ export default function MapPage() {
                 </span>
               </div>
               {focusHistoryQ.isLoading ? (
-                <div className="mono text-[10px] text-neutral-500 mt-0.5">loading 24h arc…</div>
+                <div
+                  data-testid="focus-history-loading"
+                  className="mt-0.5 inline-flex items-center gap-1.5 mono text-[10px] text-neutral-400"
+                >
+                  <Spinner size="xs" className="text-[hsl(25,95%,60%)]" />
+                  <span>loading 24h arc…</span>
+                </div>
               ) : focusHistory.length >= 2 ? (
                 <div className="mt-1 flex items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -477,6 +521,20 @@ export default function MapPage() {
               );
             })}
           </div>
+
+          {/* Refetch indicator — surfaces when the map data is being reloaded
+              after a window/mode/focus change. isLoading covers the first
+              fetch (handled by the full-canvas overlay), so this branch is
+              only the silent refetch case. */}
+          {mapQuery.isFetching && !mapQuery.isLoading && (
+            <div
+              data-testid="map-refetching"
+              className="pointer-events-auto inline-flex items-center gap-2 rounded-sm border hairline bg-background/85 px-2.5 py-1.5 mono text-[10px] uppercase tracking-[0.18em] text-[hsl(25,95%,60%)] backdrop-blur"
+            >
+              <Spinner size="xs" />
+              <span>updating signals…</span>
+            </div>
+          )}
 
           {/* Mode toggle */}
           <div className="pointer-events-auto inline-flex items-center gap-1 rounded-sm border hairline bg-background/85 p-1 backdrop-blur">
@@ -649,12 +707,34 @@ export default function MapPage() {
                     <ChevronRight className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="flex items-center gap-3 text-neutral-200">
-                  <span>{scrubHours === 0 ? "now" : `${formatHoursAgo(scrubHours)} ago`}</span>
-                  <span className="text-neutral-500">·</span>
-                  <span className="mono text-[10px] text-muted-foreground">
-                    {asOfStamp ? new Date(asOfStamp).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "—"}
-                  </span>
+                <div className="relative flex items-center gap-3 text-neutral-200">
+                  <button
+                    type="button"
+                    data-testid="moment-picker-trigger"
+                    onClick={() => setMomentPickerOpen((o) => !o)}
+                    className="inline-flex items-center gap-2 rounded-sm border hairline bg-background/60 px-2 py-1 transition-colors hover:bg-secondary/60 hover:text-neutral-50"
+                    title="Click to pick a specific date & time"
+                  >
+                    <span>{scrubHours === 0 ? "now" : `${formatHoursAgo(scrubHours)} ago`}</span>
+                    <span className="text-neutral-500">·</span>
+                    <span className="mono text-[10px] text-muted-foreground">
+                      {asOfStamp ? new Date(asOfStamp).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "—"}
+                    </span>
+                  </button>
+                  {momentPickerOpen && (
+                    <MomentPicker
+                      valueHoursAgo={scrubHours}
+                      onCommit={(h) => {
+                        setScrubHours(h);
+                        setMomentPickerOpen(false);
+                      }}
+                      onNow={() => {
+                        setScrubHours(0);
+                        setMomentPickerOpen(false);
+                      }}
+                      onClose={() => setMomentPickerOpen(false)}
+                    />
+                  )}
                 </div>
               </div>
               <input

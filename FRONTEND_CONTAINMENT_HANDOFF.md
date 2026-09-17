@@ -1,7 +1,7 @@
 # Pulse frontend containment compatibility
 
 Prepared against Calescent-Labs/pulse-web main commit
-53400aa728ea3e345183cc04b2589de1a84b1a0c.
+35c9123ab519075d1e9151022036bfb59eb6f20a.
 Status: proposed frontend branch; no merge or deployment.
 Repository write access is now available. Automated test/build verification
 runs through the frontend compatibility workflow.
