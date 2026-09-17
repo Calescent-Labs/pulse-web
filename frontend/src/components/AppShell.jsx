@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useSyncExternalStore } from "react";
+import { healthPausesData, isDataPaused, subscribeDataAvailability } from "../lib/dataAvailability";
 import { Link, NavLink } from "react-router-dom";
 import { Activity, AlertTriangle, LogIn } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
@@ -42,6 +43,12 @@ function TierToggle() {
 
 function HealthIndicator() {
   const { data, isError } = useHealth();
+  const latched = useSyncExternalStore(subscribeDataAvailability, isDataPaused, isDataPaused);
+  if (latched || healthPausesData(data)) {
+    return <div data-testid="health-indicator" className="mono text-xs text-neutral-300">
+      data paused
+    </div>;
+  }
   const bucket = data?.latest_heat_bucket;
   const stale = isStale(bucket);
   const ok = data?.status === "ok" && !stale;

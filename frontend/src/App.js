@@ -8,6 +8,7 @@ import TopicDetailPage from "./pages/TopicDetailPage";
 import UpgradePage from "./pages/UpgradePage";
 import { TierProvider } from "./lib/tierContext";
 import { SignUpProvider } from "./components/SignUpModal";
+import { DataAvailabilityBoundary } from "./components/DataAvailabilityBoundary";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           {/* SignUpProvider must live inside BrowserRouter — it uses
               useNavigate to send signed-in users to /upgrade. */}
           <SignUpProvider>
+            <DataAvailabilityBoundary>
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/map" element={<MapPage />} />
@@ -25,6 +27,7 @@ function App() {
               <Route path="/upgrade" element={<UpgradePage />} />
               <Route path="*" element={<LandingPage />} />
             </Routes>
+            </DataAvailabilityBoundary>
           </SignUpProvider>
         </BrowserRouter>
       </TierProvider>

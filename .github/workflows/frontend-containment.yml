@@ -1,0 +1,31 @@
+name: Frontend containment compatibility
+on:
+  pull_request:
+  push:
+    branches: [containment/frontend-availability]
+permissions:
+  contents: read
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: corepack enable
+      - run: node --experimental-vm-modules --test tests/containment-client.test.cjs
+        working-directory: .
+      # Upstream does not currently commit a lockfile. Capture one separately
+      # before treating this environment as reproducible.
+      - run: yarn install --non-interactive
+      - run: yarn test --watchAll=false --runInBand --testPathPattern='containment.test|DataAvailabilityBoundary.test'
+        env:
+          CI: "true"
+      - run: yarn build
+        env:
+          CI: "false"
