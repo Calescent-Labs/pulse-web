@@ -23,9 +23,11 @@ jobs:
       # Upstream does not currently commit a lockfile. Capture one separately
       # before treating this environment as reproducible.
       - run: yarn install --non-interactive
-      - run: yarn test --watchAll=false --runInBand --resolver=./jest-router-resolver.cjs --testPathPattern='containment.test|DataAvailabilityBoundary.test'
+        id: install
+      - run: yarn test --watchAll=false --runInBand --resolver=./jest-router-resolver.cjs --transformIgnorePatterns='node_modules/(?!react-router(?:-dom)?/)' --testPathPattern='containment.test|DataAvailabilityBoundary.test'
         env:
           CI: "true"
       - run: yarn build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           CI: "false"

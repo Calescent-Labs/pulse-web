@@ -97,7 +97,7 @@ In Emergent's existing frontend environment, run:
 
 ```bash
 cd frontend
-CI=true yarn test --watchAll=false --runInBand --resolver=./jest-router-resolver.cjs --testPathPattern='containment.test|DataAvailabilityBoundary.test'
+CI=true yarn test --watchAll=false --runInBand --resolver=./jest-router-resolver.cjs --transformIgnorePatterns='node_modules/(?!react-router(?:-dom)?/)' --testPathPattern='containment.test|DataAvailabilityBoundary.test'
 yarn build
 ```
 
