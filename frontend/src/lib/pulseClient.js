@@ -95,6 +95,16 @@
  */
 
 const BASE_URL = (process.env.REACT_APP_PULSE_API_BASE || "").replace(/\/+$/, "");
+import { isDataPaused, markDataPaused, isContainmentResponse, healthPausesData } from "./dataAvailability";
+
+export class PulseDataUnavailableError extends Error {
+  constructor() {
+    super("Live and historical data are temporarily unavailable");
+    this.name = "PulseDataUnavailableError";
+    this.code = 503;
+    this.dataUnavailable = true;
+  }
+}
 
 /** Error thrown for 402 pro_required responses — treated as a UI state.
  *  Backend v1.3+ enriches the 402 body with:
@@ -163,6 +173,8 @@ function buildUrl(path, params) {
 import { getClerkToken } from "./clerkBridge";
 
 async function request(path, { params, apiKey, signal } = {}) {
+  const analytical = path !== "/v1/health";
+  if (analytical && isDataPaused()) throw new PulseDataUnavailableError();
   if (!BASE_URL) {
     throw new PulseApiError(0, "REACT_APP_PULSE_API_BASE is not configured");
   }
@@ -171,10 +183,12 @@ async function request(path, { params, apiKey, signal } = {}) {
   // send a Clerk bearer token — backend prefers the bearer when both are
   // present, so we always attach both when available.
   if (apiKey) headers["X-API-Key"] = apiKey;
-  const bearer = await getClerkToken();
+  // Public health must not depend on the identity provider being available.
+  const bearer = analytical ? await getClerkToken() : null;
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
 
-  const res = await fetch(buildUrl(path, params), { headers, signal });
+  if (analytical && isDataPaused()) throw new PulseDataUnavailableError();
+  const res = await fetch(buildUrl(path, params), { headers, signal, cache: "no-store" });
 
   let body = null;
   try {
@@ -183,6 +197,13 @@ async function request(path, { params, apiKey, signal } = {}) {
     // Non-JSON body — leave body null.
   }
 
+  if (isContainmentResponse(res.status, body)) {
+    markDataPaused();
+    throw new PulseDataUnavailableError();
+  }
+  if (!analytical && res.ok && healthPausesData(body)) markDataPaused();
+  // Discard an in-flight analytical response if containment was detected meanwhile.
+  if (analytical && isDataPaused()) throw new PulseDataUnavailableError();
   if (res.ok) return body;
 
   const detail = body && body.detail;
@@ -206,7 +227,15 @@ async function request(path, { params, apiKey, signal } = {}) {
 
 /** GET /v1/health (no auth) */
 export function getHealth(signal) {
-  return request("/v1/health", { signal });
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(abort, 10000);
+  return request("/v1/health", { signal: controller.signal }).finally(() => {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  });
 }
 
 /**
@@ -272,35 +301,12 @@ export function getMap({
  * GET /v1/map/timelapse — precomputed animation frames.
  * `data.frames[i].cells[y][x]` is a normalised 0–1 density grid.
  *
- * When called with the default landing-hero params, we short-circuit to
- * the fetch that `public/index.html` fires during HTML parse. That saves
- * 1-3s off first paint because we don't wait for React + libs to bundle-
- * parse before the network round-trip begins.
+ * Always use the central request path so containment cannot be bypassed
+ * by a prefetched or persisted historical payload.
  *
  * @param {{days?:number, resolution?:'hourly'|'4h'|'daily', grid?:number, window?:'24h'|'72h'|'7d'|'30d', apiKey:string, signal?:AbortSignal}} opts
  */
 export function getMapTimelapse({ days = 7, resolution = "4h", grid = 40, window: win = "24h", apiKey, signal }) {
-  const isDefault =
-    days === 7 && resolution === "4h" && grid === 40 && win === "24h";
-  if (
-    isDefault &&
-    typeof window !== "undefined" &&
-    window.__PULSE_TIMELAPSE_PROMISE__
-  ) {
-    const p = window.__PULSE_TIMELAPSE_PROMISE__;
-    // Consume it once — subsequent refetches (staleTime expiry, etc.) go
-    // through the normal fetch path.
-    window.__PULSE_TIMELAPSE_PROMISE__ = null;
-    return p.then((data) => {
-      if (data) return data;
-      // Prefetch failed — fall back to a normal request.
-      return request("/v1/map/timelapse", {
-        params: { days, resolution, grid, window: win },
-        apiKey,
-        signal,
-      });
-    });
-  }
   return request("/v1/map/timelapse", {
     params: { days, resolution, grid, window: win },
     apiKey,
