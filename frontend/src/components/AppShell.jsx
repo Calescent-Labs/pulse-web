@@ -8,6 +8,7 @@ import { useTier } from "../lib/tierContext";
 import { useClerkAvailability } from "../lib/useClerkAvailability";
 import { formatRelativeFromISO, isStale } from "../lib/format";
 import { Disclaimer } from "./Disclaimer";
+import { PromoBanner } from "./PromoBanner";
 
 function TierToggle() {
   const { tier, setTier, devToggleEnabled, hasProKey } = useTier();
@@ -119,6 +120,7 @@ function AuthChrome() {
 }
 
 export function AppShell({ children, disclaimer, dense = false }) {
+  const dataPaused = useSyncExternalStore(subscribeDataAvailability, isDataPaused, isDataPaused);
   return (
     <div className="flex min-h-screen flex-col">
       <header
@@ -166,6 +168,8 @@ export function AppShell({ children, disclaimer, dense = false }) {
           <AuthChrome />
         </div>
       </header>
+
+      {!dataPaused && <PromoBanner />}
 
       <main
         data-testid="app-main"
